@@ -20,7 +20,7 @@
 
 `sunox` は Suno の Web エンドポイントを直接扱う単一バイナリの Rust CLI です。カスタム歌詞、スタイルタグ、自分の voice persona、ボーカル制御、weirdness/style スライダー、cover、remaster、speed edit、stems 抽出に対応し、ダウンロード時には MP3 に歌詞タグを自動で埋め込みます。
 
-**Languages:** [English](README.md) | [简体中文](README.zh-CN.md) | 日本語
+**Languages:** [English](README.md) | [简体中文](README.zh-CN.md) | 日本語 | [Français](README.fr.md) | [Español](README.es.md)
 
 [インストール](#インストール) | [クイックスタート](#クイックスタート) | [人向けコマンド](#人向けコマンド) | [Agent と高度なコマンド](#agent-と高度なコマンド) | [機能](#機能) | [コントリビューション](#コントリビューション)
 

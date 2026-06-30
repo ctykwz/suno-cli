@@ -22,7 +22,7 @@
 
 A single Rust binary that talks directly to Suno's web endpoints. Generate songs with custom lyrics, style tags, your own voice persona, vocal control, weirdness/style sliders, covers, remasters, speed edits, and stems. Zero-friction auth — one command extracts credentials from your browser automatically.
 
-**Languages:** English | [简体中文](README.zh-CN.md) | [日本語](README.ja.md)
+**Languages:** English | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Français](README.fr.md) | [Español](README.es.md)
 
 [Install](#install) | [Quick Start](#quick-start) | [Human Commands](#human-commands) | [Agent & Advanced Commands](#agent--advanced-commands) | [Features](#features) | [Contributing](#contributing)
 

@@ -20,7 +20,7 @@
 
 `sunox` 是一个单文件 Rust CLI，直接调用 Suno Web 端点。它支持自定义歌词、风格标签、个人声音 persona、人声控制、weirdness/style 滑杆、翻唱、重制、速度调整、分轨提取，以及下载时自动写入歌词标签。
 
-**语言:** [English](README.md) | 简体中文 | [日本語](README.ja.md)
+**语言:** [English](README.md) | 简体中文 | [日本語](README.ja.md) | [Français](README.fr.md) | [Español](README.es.md)
 
 [安装](#安装) | [快速开始](#快速开始) | [人类常用命令](#人类常用命令) | [Agent 与高级命令](#agent-与高级命令) | [功能](#功能) | [贡献](#贡献)
 
