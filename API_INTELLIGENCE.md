@@ -296,7 +296,11 @@ current web body keeps `prompt` empty and sends lyrics in
 
 When custom instrumental generation is submitted, the web body omits
 `gpt_description_prompt` and `metadata.lyrics_model`, even if the previous form
-state contained lyrics.
+state contained lyrics. `15suno-labs-nostudio-20260630.har` reconfirmed that
+the web instrumental toggle submits `metadata.create_mode = "custom"`,
+`make_instrumental = true`, and an empty `prompt`; CLI positional prompts for
+`sunox create --instrumental <prompt>` are therefore folded into `tags` instead
+of being sent through inspiration mode.
 
 When the web tag upsample flow is used first, `metadata.last_tags_generation`
 is copied from `POST /api/prompts/upsample` and `override_fields` can be

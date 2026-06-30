@@ -325,7 +325,7 @@ sunox install-skill --target cursor
 
 ## 実装メモ
 
-生成、description、persona、cover、extend は Suno Web の `/api/generate/v2-web/` を使います。2026-06-30 の HAR で custom create body を再捕捉しました。カスタム歌詞は `gpt_description_prompt` に入り、`prompt` は空のままです。challenge token を送る場合は `token_provider: 1` も送信します。`task: "playlist_condition"` も捕捉済みですが、これは inspiration 生成の別変種で、歌詞は `prompt` に入ります。通常の custom create ルールを流用しないでください。remaster は捕捉済みの `/api/generate/upsample`、speed adjust は `/api/clips/adjust-speed/` を使います。認証済み生成はデフォルトで challenge token なしで送信します。Suno が拒否した場合、またはユーザーが明示した場合のみ `--token <solved>` または `--captcha` を使用してください。cover、concat、playlist mutation body はまだ live mutation capture が必要です。
+生成、description、persona、cover、extend は Suno Web の `/api/generate/v2-web/` を使います。2026-06-30 の HAR で custom create body を再捕捉しました。カスタム歌詞は `gpt_description_prompt` に入り、`prompt` は空のままです。challenge token を送る場合は `token_provider: 1` も送信します。instrumental create も custom mode を使います。`sunox create --instrumental <prompt>` では prompt を style tags に統合し、送信時の `prompt` は空のままにします。これは `15suno-labs-nostudio-20260630.har` で再捕捉した Web リクエスト形状と一致します。`task: "playlist_condition"` も捕捉済みですが、これは inspiration 生成の別変種で、歌詞は `prompt` に入ります。通常の custom create ルールを流用しないでください。remaster は捕捉済みの `/api/generate/upsample`、speed adjust は `/api/clips/adjust-speed/` を使います。認証済み生成はデフォルトで challenge token なしで送信します。Suno が拒否した場合、またはユーザーが明示した場合のみ `--token <solved>` または `--captcha` を使用してください。cover、concat、playlist mutation body はまだ live mutation capture が必要です。
 
 ## コントリビューション
 

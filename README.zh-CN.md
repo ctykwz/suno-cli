@@ -325,7 +325,7 @@ sunox install-skill --target cursor
 
 ## 实现说明
 
-生成、描述、persona、cover、extend 等路径复用 Suno Web 的 `/api/generate/v2-web/`。2026-06-30 的 HAR 已重新捕获 custom create body：自定义歌词放在 `gpt_description_prompt`，`prompt` 保持为空；带 challenge token 时同时发送 `token_provider: 1`。`task: "playlist_condition"` 也已捕获，但它属于 inspiration 生成变体，歌词放在 `prompt`，不能套用普通 custom create 规则。remaster 使用已捕获的 `/api/generate/upsample`，speed adjust 使用 `/api/clips/adjust-speed/`。默认提交不携带 challenge token；只有 Suno 拒绝请求或用户明确要求时才使用 `--token <solved>` 或 `--captcha`。cover、concat 和 playlist mutation body 仍需要 live mutation capture。
+生成、描述、persona、cover、extend 等路径复用 Suno Web 的 `/api/generate/v2-web/`。2026-06-30 的 HAR 已重新捕获 custom create body：自定义歌词放在 `gpt_description_prompt`，`prompt` 保持为空；带 challenge token 时同时发送 `token_provider: 1`。纯音乐 create 也走 custom mode；`sunox create --instrumental <prompt>` 会把 prompt 合并进 style tags，提交时 `prompt` 字段仍保持为空，这与 `15suno-labs-nostudio-20260630.har` 中重新捕获的 Web 请求一致。`task: "playlist_condition"` 也已捕获，但它属于 inspiration 生成变体，歌词放在 `prompt`，不能套用普通 custom create 规则。remaster 使用已捕获的 `/api/generate/upsample`，speed adjust 使用 `/api/clips/adjust-speed/`。默认提交不携带 challenge token；只有 Suno 拒绝请求或用户明确要求时才使用 `--token <solved>` 或 `--captcha`。cover、concat 和 playlist mutation body 仍需要 live mutation capture。
 
 ## 贡献
 

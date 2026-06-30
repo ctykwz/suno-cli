@@ -74,7 +74,7 @@ pub async fn agent_info(_ctx: &AppContext) -> Result<(), CliError> {
                     "--captcha": "force the browser-backed challenge solver; submit body uses token_provider=1 when a token is produced",
                     "--no-captcha": "explicitly keep the default token=null behavior"
                 },
-                "modes": "description mode when a prompt is provided; custom lyrics mode when --lyrics or --lyrics-file is provided",
+                "modes": "description mode when a non-instrumental prompt is provided; custom lyrics mode when --lyrics or --lyrics-file is provided; custom instrumental mode when --instrumental is provided, with the prompt folded into style tags",
                 "title": "optional; omitted title is sent as an empty string for description mode because Suno currently requires params.title to be a string"
             },
             "clip upload": {
