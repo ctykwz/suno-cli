@@ -1,0 +1,45 @@
+[package]
+name = "sunox"
+version = "0.0.1"
+edition = "2024"
+description = "Generate AI music from your terminal via direct Suno web workflows"
+license = "MIT"
+repository = "https://github.com/ctykwz/sunox"
+homepage = "https://github.com/ctykwz/sunox"
+readme = "README.md"
+keywords = ["suno", "music", "ai", "cli", "audio"]
+categories = ["command-line-utilities", "multimedia::audio"]
+
+[[bin]]
+name = "sunox"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "fs", "process", "net"] }
+tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
+reqwest = { version = "0.12", features = ["json", "multipart", "rustls-tls", "stream"], default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+toml = "0.8"
+figment = { version = "0.10", features = ["toml", "env"] }
+comfy-table = "7"
+indicatif = "0.17"
+directories = "5"
+base64 = "0.22"
+futures-util = "0.3"
+id3 = "1"
+rookie = "0.5"
+uuid = { version = "1", features = ["v4"] }
+self_update = { version = "0.42", default-features = false, features = ["rustls", "compression-flate2", "archive-tar", "archive-zip"] }
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+opt-level = 3
