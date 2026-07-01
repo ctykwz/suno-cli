@@ -96,8 +96,9 @@ fn non_empty(value: String) -> Option<String> {
 async fn generate(args: GenerateArgs, ctx: &AppContext) -> Result<(), CliError> {
     let mut req = build_generate_request(&args, &ctx.config)?;
     let force_captcha = args.captcha && !args.no_captcha;
-    let client = ctx.client().await?;
     req.set_challenge_token(generation_token(args.token.clone(), force_captcha, ctx).await?);
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
+    let client = ctx.client().await?;
 
     if !ctx.quiet {
         let persona_note = if args.persona.is_some() {
@@ -149,8 +150,9 @@ fn build_generate_request(
 async fn describe(args: DescribeArgs, ctx: &AppContext) -> Result<(), CliError> {
     let mut req = build_describe_request(&args, &ctx.config);
     let force_captcha = args.captcha && !args.no_captcha;
-    let client = ctx.client().await?;
     req.set_challenge_token(generation_token(args.token.clone(), force_captcha, ctx).await?);
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
+    let client = ctx.client().await?;
 
     if !ctx.quiet {
         eprintln!(
@@ -198,6 +200,7 @@ pub async fn extend(args: ExtendArgs, ctx: &AppContext) -> Result<(), CliError> 
     let force_captcha = args.captcha && !args.no_captcha;
     req.set_challenge_token(generation_token(args.token.clone(), force_captcha, ctx).await?);
 
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
     let client = ctx.client().await?;
     let clips = client.generate(&req).await?;
     output_clips(&clips, ctx);

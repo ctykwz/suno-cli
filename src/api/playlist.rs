@@ -3,9 +3,9 @@ use serde_json::Value;
 use super::SunoClient;
 use super::types::{
     CreatePlaylistRequest, PlaylistInfo, PlaylistListResponse, PlaylistReaction,
-    PlaylistReorderRequest, PlaylistTracksRequest, SetPlaylistCoverRequest,
-    SetPlaylistMetadataRequest, SetPlaylistReactionRequest, SetPlaylistVisibilityRequest,
-    TrashPlaylistRequest,
+    PlaylistReorderRequest, PlaylistTrackMutationFailure, PlaylistTrackMutationReport,
+    PlaylistTracksRequest, SetPlaylistCoverRequest, SetPlaylistMetadataRequest,
+    SetPlaylistReactionRequest, SetPlaylistVisibilityRequest, TrashPlaylistRequest,
 };
 use crate::core::CliError;
 
@@ -187,9 +187,36 @@ impl SunoClient {
         &self,
         playlist_id: &str,
         clip_ids: &[String],
-    ) -> Result<(), CliError> {
-        self.update_playlist_tracks(playlist_id, "remove", clip_ids)
-            .await
+    ) -> Result<PlaylistTrackMutationReport, CliError> {
+        let mut succeeded_clip_ids = Vec::new();
+        let mut failed = Vec::new();
+        let mut not_attempted_clip_ids = Vec::new();
+
+        for (index, clip_id) in clip_ids.iter().enumerate() {
+            match self
+                .update_playlist_tracks(playlist_id, "remove", std::slice::from_ref(clip_id))
+                .await
+            {
+                Ok(()) => succeeded_clip_ids.push(clip_id.clone()),
+                Err(error) => {
+                    if succeeded_clip_ids.is_empty() {
+                        return Err(error);
+                    }
+                    failed.push(PlaylistTrackMutationFailure::from_error(clip_id, &error));
+                    not_attempted_clip_ids.extend_from_slice(&clip_ids[index + 1..]);
+                    break;
+                }
+            }
+        }
+
+        Ok(PlaylistTrackMutationReport::new(
+            playlist_id,
+            "remove",
+            clip_ids,
+            succeeded_clip_ids,
+            failed,
+            not_attempted_clip_ids,
+        ))
     }
 
     /// Set playlist visibility.

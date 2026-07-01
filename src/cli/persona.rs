@@ -45,7 +45,7 @@ pub enum PersonaCommand {
     Delete(PersonaDeleteArgs),
 
     /// Restore a trashed voice persona
-    Restore(PersonaDeleteArgs),
+    Restore(PersonaRestoreArgs),
 
     /// Permanently delete a trashed voice persona
     Purge(PersonaDeleteArgs),
@@ -208,10 +208,16 @@ pub struct PersonaToggleLoveArgs {
 
 #[derive(clap::Args)]
 pub struct PersonaDeleteArgs {
-    /// Persona ID to update
+    /// Persona ID to delete or purge
     pub id: String,
 
-    /// Skip confirmation
+    /// Confirm this destructive action
     #[arg(short = 'y', long)]
     pub yes: bool,
+}
+
+#[derive(clap::Args)]
+pub struct PersonaRestoreArgs {
+    /// Persona ID to restore
+    pub id: String,
 }

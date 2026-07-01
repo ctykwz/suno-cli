@@ -24,23 +24,11 @@ pub async fn run(args: AuthArgs, _ctx: &AppContext) -> Result<(), CliError> {
         || (!has_explicit_auth_input && state.jwt.is_none() && state.clerk_client_cookie.is_none());
 
     if args.refresh {
-        let cookie = state.clerk_client_cookie.clone().ok_or_else(|| {
+        state.clerk_client_cookie.as_ref().ok_or_else(|| {
             CliError::Config("no Clerk session cookie stored — run `sunox login` first".into())
         })?;
         let http = reqwest::Client::new();
-        eprintln!("Refreshing JWT via Clerk session cookie...");
-        let (session_id, jwt) = if let Some(session_id) = state.session_id.clone() {
-            (
-                session_id.clone(),
-                auth::clerk_refresh_jwt(&http, &cookie, &session_id).await?,
-            )
-        } else {
-            auth::clerk_token_exchange(&http, &cookie).await?
-        };
-        state.session_id = Some(session_id);
-        state.jwt = Some(jwt);
-        state.save()?;
-        eprintln!("JWT refreshed successfully");
+        auth::refresh_state_explicit(&http, &mut state).await?;
     } else if should_login {
         eprintln!("Extracting Suno session from your browser...");
         let browser_auth = extract_browser_auth_with_fallback(
@@ -64,11 +52,7 @@ pub async fn run(args: AuthArgs, _ctx: &AppContext) -> Result<(), CliError> {
 
         store_browser_auth_state(&mut state, browser_auth, session_id, jwt);
     } else if let Some(jwt) = args.jwt.clone() {
-        state.jwt = Some(jwt);
-        state.browser_environment = None;
-        if state.device_id.is_none() {
-            state.device_id = Some(uuid::Uuid::new_v4().to_string());
-        }
+        store_direct_jwt_state(&mut state, jwt);
     } else {
         eprintln!("Checking existing authentication...");
     }
@@ -146,6 +130,15 @@ fn store_browser_auth_state(
         .or_else(|| state.device_id.take())
         .or_else(|| Some(uuid::Uuid::new_v4().to_string()));
     state.browser_environment = browser_auth.browser_environment;
+}
+
+fn store_direct_jwt_state(state: &mut AuthState, jwt: String) {
+    state.jwt = Some(jwt);
+    state.cookie = None;
+    state.clerk_client_cookie = None;
+    state.session_id = None;
+    state.device_id = Some(uuid::Uuid::new_v4().to_string());
+    state.browser_environment = None;
 }
 
 #[cfg(test)]
@@ -308,6 +301,31 @@ mod tests {
         );
 
         assert_eq!(state.device_id.as_deref(), Some("new-device"));
+    }
+
+    #[test]
+    fn direct_jwt_state_clears_stored_refresh_material() {
+        let mut state = AuthState {
+            jwt: Some("old-jwt".into()),
+            cookie: Some("__client=old-client".into()),
+            session_id: Some("old-session".into()),
+            device_id: Some("old-device".into()),
+            browser_environment: Some(BrowserEnvironment {
+                browser_source: Some("chrome".into()),
+                user_agent: Some("Mozilla/5.0 Old".into()),
+                accept_language: Some("en-US,en;q=0.9".into()),
+            }),
+            clerk_client_cookie: Some("old-client".into()),
+        };
+
+        store_direct_jwt_state(&mut state, "new-jwt".into());
+
+        assert_eq!(state.jwt.as_deref(), Some("new-jwt"));
+        assert_eq!(state.cookie, None);
+        assert_eq!(state.clerk_client_cookie, None);
+        assert_eq!(state.session_id, None);
+        assert_ne!(state.device_id.as_deref(), Some("old-device"));
+        assert!(state.browser_environment.is_none());
     }
 
     #[test]

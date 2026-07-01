@@ -6,4 +6,4 @@ mod validation;
 
 pub use config::AppConfig;
 pub use error::CliError;
-pub use validation::ensure_clip_ids;
+pub use validation::{ensure_clip_ids, ensure_destructive_confirmed};

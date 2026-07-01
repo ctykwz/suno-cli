@@ -9,11 +9,22 @@ use crate::core::CliError;
 
 pub async fn run() -> Result<(), CliError> {
     let cli = Cli::parse();
-    let ctx = AppContext::new(cli.json, cli.quiet, &cli.config_overrides)?;
+    let ctx = AppContext::new(cli.json, cli.quiet, cli.parallel, &cli.config_overrides)?;
+    let Cli {
+        prompt, command, ..
+    } = cli;
 
-    match cli.command {
-        Some(Commands::Create(args)) => commands::create::create(args, &ctx).await,
-        Some(Commands::Download(args)) => commands::media::download(args, &ctx).await,
+    dispatch_command(command, prompt, &ctx).await
+}
+
+async fn dispatch_command(
+    command: Option<Commands>,
+    prompt: Option<String>,
+    ctx: &AppContext,
+) -> Result<(), CliError> {
+    match command {
+        Some(Commands::Create(args)) => commands::create::create(args, ctx).await,
+        Some(Commands::Download(args)) => commands::media::download(args, ctx).await,
         Some(Commands::Add(args)) => {
             commands::playlist::run(
                 crate::cli::PlaylistArgs {
@@ -22,12 +33,12 @@ pub async fn run() -> Result<(), CliError> {
                         clip_ids: args.clip_ids,
                     }),
                 },
-                &ctx,
+                ctx,
             )
             .await
         }
         None => {
-            let Some(prompt) = cli.prompt else {
+            let Some(prompt) = prompt else {
                 return Err(CliError::Config("provide a prompt or command".into()));
             };
             commands::create::create(
@@ -48,32 +59,32 @@ pub async fn run() -> Result<(), CliError> {
                     no_captcha: false,
                     persona: None,
                 },
-                &ctx,
+                ctx,
             )
             .await
         }
-        Some(Commands::Clip(args)) => run_clip(args.command, &ctx).await,
-        Some(Commands::Login) => commands::auth::run(auth_args_login(), &ctx).await,
-        Some(Commands::Logout) => commands::auth::run(auth_args_logout(), &ctx).await,
+        Some(Commands::Clip(args)) => run_clip(args.command, ctx).await,
+        Some(Commands::Login) => commands::auth::run(auth_args_login(), ctx).await,
+        Some(Commands::Logout) => commands::auth::run(auth_args_logout(), ctx).await,
         Some(Commands::Doctor) => {
             commands::config::run(
                 ConfigArgs {
                     action: ConfigAction::Check,
                 },
-                &ctx,
+                ctx,
             )
             .await
         }
-        Some(Commands::Auth(args)) => commands::auth::run(args, &ctx).await,
-        Some(Commands::Credits) => commands::account::credits(&ctx).await,
-        Some(Commands::Models) => commands::account::models(&ctx).await,
-        Some(Commands::Lyrics(args)) => commands::create::lyrics(args, &ctx).await,
-        Some(Commands::Persona(args)) => commands::persona::run(args, &ctx).await,
-        Some(Commands::Playlist(args)) => commands::playlist::run(args, &ctx).await,
-        Some(Commands::Config(args)) => commands::config::run(args, &ctx).await,
-        Some(Commands::AgentInfo) => commands::agent::agent_info(&ctx).await,
-        Some(Commands::InstallSkill(args)) => commands::agent::install_skill(args, &ctx).await,
-        Some(Commands::Update(args)) => commands::update::run(args, &ctx).await,
+        Some(Commands::Auth(args)) => commands::auth::run(args, ctx).await,
+        Some(Commands::Credits) => commands::account::credits(ctx).await,
+        Some(Commands::Models) => commands::account::models(ctx).await,
+        Some(Commands::Lyrics(args)) => commands::create::lyrics(args, ctx).await,
+        Some(Commands::Persona(args)) => commands::persona::run(args, ctx).await,
+        Some(Commands::Playlist(args)) => commands::playlist::run(args, ctx).await,
+        Some(Commands::Config(args)) => commands::config::run(args, ctx).await,
+        Some(Commands::AgentInfo) => commands::agent::agent_info(ctx).await,
+        Some(Commands::InstallSkill(args)) => commands::agent::install_skill(args, ctx).await,
+        Some(Commands::Update(args)) => commands::update::run(args, ctx).await,
     }
 }
 

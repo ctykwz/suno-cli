@@ -6,3 +6,12 @@ pub fn ensure_clip_ids(ids: &[String]) -> Result<(), CliError> {
     }
     Ok(())
 }
+
+pub fn ensure_destructive_confirmed(yes: bool, command: &str) -> Result<(), CliError> {
+    if !yes {
+        return Err(CliError::Config(format!(
+            "`{command}` requires -y/--yes because it modifies or removes Suno resources"
+        )));
+    }
+    Ok(())
+}

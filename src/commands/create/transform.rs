@@ -6,6 +6,7 @@ use crate::output::{self, OutputFormat};
 use super::support::{generation_token, output_clips};
 
 pub async fn concat(args: ConcatArgs, ctx: &AppContext) -> Result<(), CliError> {
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
     let clip = ctx.client().await?.concat(&args.clip_id).await?;
     match ctx.fmt {
         OutputFormat::Json => output::json::success(&clip),
@@ -24,6 +25,7 @@ pub async fn cover(args: CoverArgs, ctx: &AppContext) -> Result<(), CliError> {
     }
     let force_captcha = args.captcha && !args.no_captcha;
     let challenge_token = generation_token(args.token.clone(), force_captcha, ctx).await?;
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
     let client = ctx.client().await?;
     let clips = client
         .cover(&args.clip_id, model, args.tags.as_deref(), challenge_token)
@@ -48,6 +50,7 @@ pub async fn remaster(args: RemasterArgs, ctx: &AppContext) -> Result<(), CliErr
     if !ctx.quiet {
         eprintln!("Remastering with {}...", args.model.to_api_key());
     }
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
     let client = ctx.client().await?;
     let clips = client
         .remaster(&args.clip_id, args.model.to_api_key())
@@ -77,6 +80,7 @@ pub async fn speed(args: SpeedArgs, ctx: &AppContext) -> Result<(), CliError> {
             format!("{} ({:.2}x)", source.title, args.multiplier)
         }
     };
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
     let clip = client
         .adjust_speed(&args.clip_id, args.multiplier, args.keep_pitch, &title)
         .await?;
@@ -87,6 +91,7 @@ pub async fn speed(args: SpeedArgs, ctx: &AppContext) -> Result<(), CliError> {
 pub async fn stems(args: StemsArgs, ctx: &AppContext) -> Result<(), CliError> {
     let force_captcha = args.captcha && !args.no_captcha;
     let challenge_token = generation_token(args.token.clone(), force_captcha, ctx).await?;
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
     let clips = ctx
         .client()
         .await?

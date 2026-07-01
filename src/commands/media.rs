@@ -47,6 +47,7 @@ pub async fn upload(args: UploadArgs, ctx: &AppContext) -> Result<(), CliError> 
         eprintln!("Uploading audio: {}", path.display());
     }
 
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
     let client = ctx.client().await?;
     let result = upload::run(
         &client,

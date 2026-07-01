@@ -90,9 +90,14 @@ Para agentes y scripts, empieza con `sunox agent-info --json` y luego llama a lo
 |---|---|
 | `--json` | Fuerza salida JSON estructurada; se activa automáticamente cuando stdout se redirige |
 | `--quiet` | Reduce mensajes de progreso no esenciales |
+| `--parallel` | Permite escrituras Suno concurrentes para la misma cuenta; por defecto se serializan por cuenta |
 | `-c key=value` / `--config key=value` | Sobrescribe una configuración para esta ejecución, por ejemplo `-c default_model=v5.5 -c output_dir=./songs`; repetible |
 | `-V` / `--version` | Muestra la versión |
 | `-h` / `--help` | Muestra ayuda de la orden o suborden |
+
+Las escrituras Suno se serializan por cuenta por defecto. Desactívalo de forma
+persistente con `sunox config set serial_mutations false`, para una invocación
+con `-c serial_mutations=false`, o para una sola orden con `--parallel`.
 
 ## Comandos para personas
 
@@ -122,7 +127,7 @@ sunox clip concat         Unir clips en una canción completa
 sunox clip cover          Crear una cover con otro estilo o modelo
 sunox clip remaster       Remasterizar con otro modelo
 sunox clip speed          Ajustar la velocidad de reproducción
-sunox clip stems          Extraer stems de voz e instrumentos
+sunox clip stems          Generar stems desde un clip existente
 ```
 
 ### Explorar e inspeccionar
@@ -148,7 +153,7 @@ sunox models
 sunox download <ids>
 sunox clip download <ids>
 sunox clip upload <file>
-sunox clip delete <ids>
+sunox clip delete <ids> -y
 sunox clip restore <ids>
 sunox clip like <ids>
 sunox clip dislike <ids>
@@ -227,13 +232,13 @@ sunox create --persona <persona_id> --title "My Song" --tags "pop" --lyrics "[Ve
 También puedes publicar, despublicar, marcar como favorita, eliminar, restaurar o purgar una persona:
 
 ```bash
-sunox persona publish <persona_id>
+sunox persona publish <persona_id>        # solo si quieres hacerla publica
 sunox persona unpublish <persona_id>
 sunox persona love <persona_id>
 sunox persona unlove <persona_id>
 sunox persona delete <persona_id> -y
-sunox persona restore <persona_id> -y
-sunox persona purge <persona_id> -y
+sunox persona restore <persona_id>
+sunox persona purge <persona_id> -y       # eliminacion permanente
 ```
 
 ### Playlists
@@ -297,6 +302,9 @@ Modelos de remaster: v5.5 = chirp-flounder, v5 = chirp-carp, v4.5+ = chirp-bass.
 - Todas las órdenes soportan `--json`.
 - Cuando stdout está redirigido, se activa JSON automáticamente.
 - El progreso y los errores van a stderr para no contaminar el JSON.
+- Las escrituras Suno se serializan por cuenta por defecto; no uses `sunox config set serial_mutations false`, `-c serial_mutations=false` ni `--parallel` salvo que el usuario permita explícitamente escrituras concurrentes en la misma cuenta.
+- Para una inspección de audio normal, usa el medio existente del clip: `sunox clip info <id> --json` expone `audio_url`, y `sunox clip download` actualmente descarga MP3 desde `clip.audio_url` (`--video` usa `clip.video_url` cuando existe). `sunox clip stems` es extracción de stems basada en generación, distinta del export Pro Get Stems de Suno Web. Suno Web también muestra opciones Pro como WAV Audio, Get Stems y Video; los agentes solo deben usarlas cuando el CLI declare soporte y el usuario pida explícitamente ese formato. Si `playlist remove` devuelve `partial_mutation`, revisa `error.details.succeeded_clip_ids`, `error.details.failed` y `error.details.not_attempted_clip_ids` antes de reintentar.
+- Sin una petición explícita del usuario, no publiques recursos, no fuerces `--captcha`, no imprimas material de autenticación y no ejecutes comandos destructivos; esos comandos requieren `-y/--yes`.
 - Las respuestas de error incluyen una acción sugerida.
 
 ```bash
@@ -309,7 +317,7 @@ Códigos de salida semánticos:
 | Código | Significado | Acción sugerida |
 |---|---|---|
 | 0 | Éxito | Continuar |
-| 1 | Error runtime o de red | Reintentar con backoff |
+| 1 | Error runtime, endpoint Web o mutación parcial | Revisar `error.code` y `error.details` antes de reintentar |
 | 2 | Error de configuración | Corregir la config, no reintentar a ciegas |
 | 3 | Error de autenticación | Ejecutar `sunox login` |
 | 4 | Rate limit | Esperar 30-60 segundos |
@@ -330,7 +338,7 @@ sunox install-skill --target cursor
 
 ## Notas de implementación
 
-Los flujos generate, describe, persona, cover y extend reutilizan `/api/generate/v2-web/` de Suno Web. El body custom create fue recapturado el 30 de junio de 2026: las letras personalizadas se envían en `gpt_description_prompt`, mientras `prompt` queda vacío; con un challenge token resuelto también se envía `token_provider: 1`. Instrumental create también usa custom mode: con `sunox create --instrumental <prompt>`, el prompt se integra en los style tags y el campo `prompt` enviado queda vacío, igual que en la petición Web recapturada en `15suno-labs-nostudio-20260630.har`. `task: "playlist_condition"` también fue capturado, pero pertenece a un flujo inspiration separado que pone letras en `prompt`, por lo que no debe reutilizar las reglas del custom create estándar. Remaster usa `/api/generate/upsample`, y speed adjust usa `/api/clips/adjust-speed/`. Por defecto, `sunox` no envía challenge token; usa `--token <solved>` o `--captcha` solo cuando Suno rechace la petición o cuando quieras forzar el solver. Los bodies de cover, concat y playlist mutation todavía necesitan una captura live.
+Los flujos generate, describe, persona, cover y extend reutilizan `/api/generate/v2-web/` de Suno Web. El body custom create fue recapturado el 30 de junio de 2026: las letras personalizadas se envían en `gpt_description_prompt`, mientras `prompt` queda vacío; con un challenge token resuelto también se envía `token_provider: 1`. Instrumental create también usa custom mode: con `sunox create --instrumental <prompt>`, el prompt se integra en los style tags y el campo `prompt` enviado queda vacío, igual que en la petición Web recapturada en `15suno-labs-nostudio-20260630.har`. `task: "playlist_condition"` también fue capturado, pero pertenece a un flujo inspiration separado que pone letras en `prompt`, por lo que no debe reutilizar las reglas del custom create estándar. Remaster usa `/api/generate/upsample`, y speed adjust usa `/api/clips/adjust-speed/`. Por defecto, `sunox` no envía challenge token; usa `--token <solved>` o `--captcha` solo cuando Suno rechace la petición o cuando quieras forzar el solver. Los bodies de cover generation y concat edit todavía necesitan una captura live nueva. Las mutaciones de playlists están implementadas con evidencia de bundle/live y tests de contrato de endpoint; `playlist remove` envía un clip por petición porque los lotes grandes pueden devolver Suno 500.
 
 ## Contribuir
 

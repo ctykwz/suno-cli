@@ -30,7 +30,7 @@ pub struct DeleteArgs {
     /// Clip ID(s) to delete
     pub ids: Vec<String>,
 
-    /// Skip confirmation
+    /// Confirm this destructive action
     #[arg(short = 'y', long)]
     pub yes: bool,
 }

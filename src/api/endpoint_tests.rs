@@ -1,6 +1,7 @@
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
+use tokio::time::{Duration, timeout};
 
 use super::SunoClient;
 use super::types::{
@@ -9,6 +10,7 @@ use super::types::{
     InitializeAudioClipRequest, PersonaListScope, PlaylistReaction, SetMetadataRequest,
 };
 use crate::auth::{AuthState, BrowserEnvironment};
+use crate::core::CliError;
 
 struct CapturedRequest {
     method: String,
@@ -28,20 +30,60 @@ impl MockServer {
     }
 
     async fn json_sequence(response_bodies: &[&str]) -> Self {
+        let responses = response_bodies
+            .iter()
+            .map(|body| (200, body.to_string()))
+            .collect::<Vec<_>>();
+        Self::response_sequence(responses).await
+    }
+
+    async fn response_sequence(responses: Vec<(u16, String)>) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
             .expect("bind mock server");
         let addr = listener.local_addr().expect("mock server address");
         let (tx, rx) = oneshot::channel();
-        let responses: Vec<String> = response_bodies
-            .iter()
-            .map(|body| body.to_string())
-            .collect();
 
         tokio::spawn(async move {
             let mut captured = Vec::with_capacity(responses.len());
-            for response_body in responses {
+            for (status, response_body) in responses {
                 let (stream, _) = listener.accept().await.expect("accept request");
+                captured.push(capture_request_with_status(stream, status, &response_body).await);
+            }
+            let _ = tx.send(captured);
+        });
+
+        Self {
+            base_url: format!("http://{addr}"),
+            requests: rx,
+        }
+    }
+
+    async fn json_status_sequence(response_bodies: &[(u16, &str)]) -> Self {
+        Self::response_sequence(
+            response_bodies
+                .iter()
+                .map(|(status, body)| (*status, body.to_string()))
+                .collect(),
+        )
+        .await
+    }
+
+    async fn json_until_idle(response_body: &str, max_requests: usize) -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind mock server");
+        let addr = listener.local_addr().expect("mock server address");
+        let (tx, rx) = oneshot::channel();
+        let response_body = response_body.to_string();
+
+        tokio::spawn(async move {
+            let mut captured = Vec::new();
+            while captured.len() < max_requests {
+                let Ok(Ok((stream, _))) = timeout(Duration::from_secs(1), listener.accept()).await
+                else {
+                    break;
+                };
                 captured.push(capture_request(stream, &response_body).await);
             }
             let _ = tx.send(captured);
@@ -77,6 +119,22 @@ impl MockServer {
 }
 
 async fn capture_request(mut stream: TcpStream, response_body: &str) -> CapturedRequest {
+    capture_request_with_status_inner(&mut stream, 200, response_body).await
+}
+
+async fn capture_request_with_status(
+    mut stream: TcpStream,
+    status: u16,
+    response_body: &str,
+) -> CapturedRequest {
+    capture_request_with_status_inner(&mut stream, status, response_body).await
+}
+
+async fn capture_request_with_status_inner(
+    stream: &mut TcpStream,
+    status: u16,
+    response_body: &str,
+) -> CapturedRequest {
     let mut data = Vec::new();
     let mut buf = [0_u8; 1024];
 
@@ -112,8 +170,13 @@ async fn capture_request(mut stream: TcpStream, response_body: &str) -> Captured
     }
 
     let body = String::from_utf8_lossy(&data[header_end..header_end + content_length]).into();
+    let reason = match status {
+        200 => "OK",
+        500 => "Internal Server Error",
+        _ => "Status",
+    };
     let response = format!(
-        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+        "HTTP/1.1 {status} {reason}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
         response_body.len(),
         response_body
     );
@@ -933,21 +996,116 @@ async fn add_clips_to_playlist_posts_v2_tracks_add_contract() {
 
 #[tokio::test]
 async fn remove_clips_from_playlist_posts_v2_tracks_remove_contract() {
-    let server = MockServer::json("{}").await;
+    let server = MockServer::json_until_idle("{}", 2).await;
     let client = server.client();
 
-    client
+    let report = client
         .remove_clips_from_playlist("playlist-1", &["clip-a".to_string(), "clip-b".to_string()])
         .await
         .expect("remove clips");
 
-    let request = server.captured().await;
-    assert_eq!(request.method, "POST");
-    assert_eq!(request.path, "/api/playlist/v2/playlist-1/tracks/remove");
+    assert_eq!(report.succeeded_clip_ids, vec!["clip-a", "clip-b"]);
+    assert!(report.failed.is_empty());
+    assert!(report.not_attempted_clip_ids.is_empty());
+
+    let requests = server.captured_all().await;
+    assert_eq!(requests.len(), 2);
+    for request in &requests {
+        assert_eq!(request.method, "POST");
+        assert_eq!(request.path, "/api/playlist/v2/playlist-1/tracks/remove");
+    }
     assert_eq!(
-        serde_json::from_str::<serde_json::Value>(&request.body).expect("request json"),
-        serde_json::json!({ "clip_ids": ["clip-a", "clip-b"] })
+        serde_json::from_str::<serde_json::Value>(&requests[0].body).expect("request json"),
+        serde_json::json!({ "clip_ids": ["clip-a"] })
     );
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&requests[1].body).expect("request json"),
+        serde_json::json!({ "clip_ids": ["clip-b"] })
+    );
+}
+
+#[tokio::test]
+async fn remove_clips_from_playlist_reports_partial_failure() {
+    let server = MockServer::json_status_sequence(&[
+        (200, "{}"),
+        (
+            500,
+            r#"{"status_code":500,"detail":"An unexpected error occurred."}"#,
+        ),
+    ])
+    .await;
+    let client = server.client();
+
+    let report = client
+        .remove_clips_from_playlist(
+            "playlist-1",
+            &[
+                "clip-a".to_string(),
+                "clip-b".to_string(),
+                "clip-c".to_string(),
+            ],
+        )
+        .await
+        .expect("partial report");
+
+    assert_eq!(report.succeeded_clip_ids, vec!["clip-a"]);
+    assert_eq!(report.failed.len(), 1);
+    assert_eq!(report.failed[0].clip_id, "clip-b");
+    assert_eq!(report.failed[0].error_code, "api_error");
+    assert!(report.failed[0].message.contains("HTTP 500"));
+    assert_eq!(report.not_attempted_clip_ids, vec!["clip-c"]);
+
+    let requests = server.captured_all().await;
+    assert_eq!(requests.len(), 2);
+}
+
+#[tokio::test]
+async fn remove_clips_from_playlist_propagates_first_failure() {
+    let server = MockServer::json_status_sequence(&[(
+        500,
+        r#"{"status_code":500,"detail":"An unexpected error occurred."}"#,
+    )])
+    .await;
+    let client = server.client();
+
+    let error = client
+        .remove_clips_from_playlist(
+            "playlist-1",
+            &[
+                "clip-a".to_string(),
+                "clip-b".to_string(),
+                "clip-c".to_string(),
+            ],
+        )
+        .await
+        .expect_err("first failure should not become partial mutation");
+
+    match error {
+        CliError::Api { code, message } => {
+            assert_eq!(code, "api_error");
+            assert!(message.contains("HTTP 500"));
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
+
+    let requests = server.captured_all().await;
+    assert_eq!(requests.len(), 1);
+}
+
+#[tokio::test]
+async fn remove_clips_from_playlist_propagates_first_rate_limit() {
+    let server = MockServer::json_status_sequence(&[(429, "")]).await;
+    let client = server.client();
+
+    let error = client
+        .remove_clips_from_playlist("playlist-1", &["clip-a".to_string(), "clip-b".to_string()])
+        .await
+        .expect_err("first rate limit should not become partial mutation");
+
+    assert!(matches!(error, CliError::RateLimited));
+
+    let requests = server.captured_all().await;
+    assert_eq!(requests.len(), 1);
 }
 
 #[tokio::test]

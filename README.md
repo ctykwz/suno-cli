@@ -95,9 +95,14 @@ Available on every subcommand:
 |---|---|
 | `--json` | Force structured JSON output (auto-detected when stdout is piped) |
 | `--quiet` | Suppress non-essential progress output |
+| `--parallel` | Allow concurrent Suno write requests for the same account; default writes are account-scoped serial |
 | `-c key=value` / `--config key=value` | Override a config value for this invocation, e.g. `-c default_model=v5.5 -c output_dir=./songs` (repeatable) |
 | `-V` / `--version` | Print the CLI version |
 | `-h` / `--help` | Subcommand-aware help |
+
+Suno write commands are account-scoped serial by default. Disable that behavior
+persistently with `sunox config set serial_mutations false`, for one invocation
+with `-c serial_mutations=false`, or for one command with `--parallel`.
 
 ## Human Commands
 
@@ -129,7 +134,7 @@ sunox clip concat         Stitch clips into a full song
 sunox clip cover          Create a cover with different style/model
 sunox clip remaster       Remaster with a different model version
 sunox clip speed          Adjust playback speed
-sunox clip stems          Extract vocals and instruments
+sunox clip stems          Generate stems from an existing clip
 ```
 
 ### Browse & Inspect
@@ -150,9 +155,9 @@ sunox persona unpublish <id> Make a voice persona private
 sunox persona love <id> Favorite a voice persona
 sunox persona unlove <id> Remove a voice persona favorite
 sunox persona toggle-love <id> Toggle favorite state for a voice persona
-sunox persona delete <id> Move a voice persona to trash
+sunox persona delete <id> -y Move a voice persona to trash
 sunox persona restore <id> Restore a trashed voice persona
-sunox persona purge <id> Permanently delete a trashed voice persona
+sunox persona purge <id> -y Permanently delete a trashed voice persona
 sunox playlist list   List your playlists
 sunox playlist info <id> View playlist details
 sunox clip status <ids> Check generation progress
@@ -167,7 +172,7 @@ sunox models          List available models with limits
 sunox download <ids>       Download audio/video with embedded lyrics (--video for MP4)
 sunox clip download <ids>  Agent/advanced equivalent of `sunox download`
 sunox clip upload <file>   Upload local audio into your Suno library (--upload-type, --stem-mix, --timeout)
-sunox clip delete <ids>    Delete/trash clips
+sunox clip delete <ids> -y Delete/trash clips
 sunox clip restore <ids>   Restore trashed clips
 sunox clip like <ids>      Like clips (--clear to remove like)
 sunox clip dislike <ids>   Dislike clips (--clear to remove dislike)
@@ -185,7 +190,7 @@ sunox playlist save <id> Save a playlist to your library
 sunox playlist unsave <id> Remove a saved playlist
 sunox playlist like <id> Like a playlist (--clear to remove)
 sunox playlist dislike <id> Dislike a playlist (--clear to remove)
-sunox playlist delete <id> Delete/trash a playlist
+sunox playlist delete <id> -y Delete/trash a playlist
 sunox clip timed-lyrics    Get word-level timestamped lyrics (--lrc for LRC format)
 ```
 
@@ -248,14 +253,14 @@ sunox persona clips <persona_id> --page 1
 sunox persona create <clip_id> --name "My Voice" --description "Warm lead vocal"
 sunox persona set <persona_id> --name "My Voice" --description "Warm lead vocal" --public false
 sunox persona processed-clip <processed_clip_id>
-sunox persona publish <persona_id>
+sunox persona publish <persona_id>        # only when you explicitly want it public
 sunox persona unpublish <persona_id>
 sunox persona love <persona_id>
 sunox persona unlove <persona_id>
 sunox persona toggle-love <persona_id>
 sunox persona delete <persona_id> -y
-sunox persona restore <persona_id> -y
-sunox persona purge <persona_id> -y
+sunox persona restore <persona_id>
+sunox persona purge <persona_id> -y       # permanent deletion
 
 # Generate with your voice
 sunox create --persona <persona_id> --title "My Song" --tags "pop" --lyrics "[Verse]\nHello world"
@@ -281,7 +286,7 @@ sunox playlist set <playlist_id> --image-file ./cover.png
 # Manage songs in a playlist
 sunox playlist add <playlist_id> <clip_id_1> <clip_id_2>
 sunox playlist remove <playlist_id> <clip_id_1>
-sunox playlist publish <playlist_id>            # make public
+sunox playlist publish <playlist_id>            # only when you explicitly want it public
 sunox playlist publish <playlist_id> --private  # make private
 sunox playlist reorder <playlist_id> --clip-id <clip_id> --index 0
 sunox playlist restore <playlist_id>
@@ -335,7 +340,7 @@ sunox clip set <clip_id> --image-url <cover_url>
 sunox clip set <clip_id> --remove-cover
 sunox clip set <clip_id> --remove-video-cover
 
-# Make clips public
+# Make clips public only when explicitly requested
 sunox clip publish <clip_id_1> <clip_id_2>
 
 # Trash, restore, or react to clips
@@ -402,12 +407,16 @@ The human surface is intentionally small; the full resource API is for agents
 and scripts. Start with `sunox agent-info --json` to discover supported
 commands, features, models, exit codes, and recommended workflows.
 
-Every command supports `--json` for structured output. When stdout is piped, JSON is auto-detected. Progress and errors go to stderr. Exit codes are semantic:
+Every command supports `--json` for structured output. When stdout is piped, JSON is auto-detected. Progress and errors go to stderr. Suno write commands are account-scoped serial by default; do not use `sunox config set serial_mutations false`, `-c serial_mutations=false`, or `--parallel` unless the user explicitly allows same-account concurrent writes.
+
+For routine audio inspection, use the existing clip media: `sunox clip info <id> --json` exposes `audio_url`, and `sunox clip download` currently downloads MP3 audio from `clip.audio_url` (`--video` uses `clip.video_url` when present). `sunox clip stems` is generation-backed stems extraction and is not the same as Suno Web Pro Get Stems export. Suno Web also shows Pro download choices such as WAV Audio, Get Stems, and Video; agents should only use those when the CLI exposes support and the user explicitly requests that format. If `playlist remove` returns `partial_mutation`, inspect `error.details.succeeded_clip_ids`, `error.details.failed`, and `error.details.not_attempted_clip_ids` before retrying. Do not publish, make public, force `--captcha`, print auth material, or run destructive commands unless the user explicitly asks for that action; destructive commands require `-y/--yes`.
+
+Exit codes are semantic:
 
 | Code | Meaning | Agent action |
 |---|---|---|
 | 0 | Success | Continue |
-| 1 | Runtime error (network, web endpoint) | Retry with backoff |
+| 1 | Runtime, web endpoint, or partial mutation error | Inspect `error.code` and `error.details` before retrying |
 | 2 | Config error | Fix config, don't retry |
 | 3 | Auth error | Run `sunox login` |
 | 4 | Rate limited | Wait 30-60s, retry |
@@ -486,7 +495,7 @@ After installation, your coding agent automatically picks up the skill on the ne
 | Audio upload | `POST /api/uploads/audio/`, presigned S3 form upload, `POST /api/uploads/audio/{id}/upload-finish/`, `GET /api/uploads/audio/{id}/`, `POST /api/uploads/audio/{id}/initialize-clip/` | CLI workflow implemented and live-verified for `file_upload` |
 | Image upload | `POST /api/uploads/image/`, presigned S3 form upload, `POST /api/uploads/image/{id}/upload-finish/` | CLI workflow implemented for clip and playlist covers; playlist cover patch uses `PATCH /api/playlist/v2/{id}` with `cover_url`, `cover_image_s3_id`, `cover_is_user_set`; clip cover patch uses `POST /api/gen/{id}/set_metadata/` with `image_url` |
 
-Generation tasks use `/api/generate/v2-web/`. The custom create payload was live-recaptured on June 30, 2026: custom lyrics are sent as `gpt_description_prompt` while `prompt` stays empty, and a solved challenge token uses `token_provider: 1`. Instrumental create also uses custom mode; when `sunox create --instrumental <prompt>` is used, the prompt is folded into style tags and the submitted `prompt` field stays empty, matching the live web request shape recaptured in `15suno-labs-nostudio-20260630.har`. `task: "playlist_condition"` was also captured and intentionally treated as a separate inspiration flow because it puts lyrics in `prompt`. Remaster uses the live-captured `/api/generate/upsample` route, and speed adjust uses `/api/clips/adjust-speed/`. Commands that submit through `/api/generate/v2-web/` preflight `/api/c/check` with `ctype=generation`; when no challenge is required they submit without a challenge token, and when a challenge is required you can use `--token <solved>` to supply one or `--captcha` to force the browser solver on create, cover, extend, and stems. The audio upload workflow was live-verified for `file_upload`; clip cover upload was live-verified through image upload plus clip metadata update; playlist cover upload was live-verified through image upload plus v2 metadata patch. Cover, concat, and other playlist mutation bodies still need live mutation captures.
+Generation tasks use `/api/generate/v2-web/`. The custom create payload was live-recaptured on June 30, 2026: custom lyrics are sent as `gpt_description_prompt` while `prompt` stays empty, and a solved challenge token uses `token_provider: 1`. Instrumental create also uses custom mode; when `sunox create --instrumental <prompt>` is used, the prompt is folded into style tags and the submitted `prompt` field stays empty, matching the live web request shape recaptured in `15suno-labs-nostudio-20260630.har`. `task: "playlist_condition"` was also captured and intentionally treated as a separate inspiration flow because it puts lyrics in `prompt`. Remaster uses the live-captured `/api/generate/upsample` route, and speed adjust uses `/api/clips/adjust-speed/`. Commands that submit through `/api/generate/v2-web/` preflight `/api/c/check` with `ctype=generation`; when no challenge is required they submit without a challenge token, and when a challenge is required you can use `--token <solved>` to supply one or `--captcha` to force the browser solver on create, cover, extend, and stems. The audio upload workflow was live-verified for `file_upload`; clip cover upload was live-verified through image upload plus clip metadata update; playlist cover upload was live-verified through image upload plus v2 metadata patch. Cover generation and concat edit bodies still need fresh live mutation captures. Playlist mutations are implemented from bundle/live evidence plus endpoint contract tests; playlist remove intentionally submits one clip per request because larger live batches can return Suno 500s.
 
 ## Contributing
 

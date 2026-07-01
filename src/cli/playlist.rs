@@ -176,7 +176,7 @@ pub struct PlaylistDeleteArgs {
     /// Playlist ID to delete/trash
     pub id: String,
 
-    /// Skip confirmation
+    /// Confirm this destructive action
     #[arg(short = 'y', long)]
     pub yes: bool,
 }

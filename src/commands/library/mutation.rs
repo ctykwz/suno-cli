@@ -3,21 +3,14 @@ use serde_json::{Value, json};
 use crate::api::types::{ClipReaction, SetMetadataRequest};
 use crate::app::AppContext;
 use crate::cli::{DeleteArgs, PublishArgs, ReactionArgs, RestoreArgs, SetArgs};
-use crate::core::{CliError, ensure_clip_ids};
+use crate::core::{CliError, ensure_clip_ids, ensure_destructive_confirmed};
 use crate::output::{self, OutputFormat};
 use crate::workflow::image_upload;
 
 pub async fn delete(args: DeleteArgs, ctx: &AppContext) -> Result<(), CliError> {
     ensure_clip_ids(&args.ids)?;
-    if !args.yes {
-        eprintln!(
-            "Deleting {} clip(s): {}",
-            args.ids.len(),
-            args.ids.join(", ")
-        );
-        eprintln!("Use -y to skip confirmation, or press Ctrl+C to cancel");
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-    }
+    ensure_destructive_confirmed(args.yes, "sunox clip delete")?;
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
     ctx.client().await?.delete_clips(&args.ids).await?;
     match ctx.fmt {
         OutputFormat::Json => output::json::success(clip_ids_result(&args.ids, "deleted", true)),
@@ -28,6 +21,7 @@ pub async fn delete(args: DeleteArgs, ctx: &AppContext) -> Result<(), CliError> 
 
 pub async fn restore(args: RestoreArgs, ctx: &AppContext) -> Result<(), CliError> {
     ensure_clip_ids(&args.ids)?;
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
     ctx.client().await?.restore_clips(&args.ids).await?;
     match ctx.fmt {
         OutputFormat::Json => output::json::success(clip_ids_result(&args.ids, "restored", true)),
@@ -57,6 +51,7 @@ pub async fn set(args: SetArgs, ctx: &AppContext) -> Result<(), CliError> {
         (_, Some(path)) => Some(std::fs::read_to_string(path)?),
         _ => None,
     };
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
     let client = ctx.client().await?;
     let image_url = if let Some(image_file) = args.image_file.as_deref() {
         if !ctx.quiet {
@@ -89,6 +84,7 @@ pub async fn set(args: SetArgs, ctx: &AppContext) -> Result<(), CliError> {
 
 pub async fn publish(args: PublishArgs, ctx: &AppContext) -> Result<(), CliError> {
     ensure_clip_ids(&args.ids)?;
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
     let client = ctx.client().await?;
     let is_public = !args.private;
     for id in &args.ids {
@@ -111,6 +107,7 @@ async fn react(
     reaction: ClipReaction,
 ) -> Result<(), CliError> {
     ensure_clip_ids(&args.ids)?;
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
     let client = ctx.client().await?;
     let next_reaction = if args.clear { None } else { Some(reaction) };
     for id in &args.ids {

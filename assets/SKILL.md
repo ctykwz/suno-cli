@@ -1,6 +1,6 @@
 ---
 name: sunox
-description: Generate AI music from the terminal using the `sunox` CLI. Use when user asks to "generate a song", "make music", "create AI music", "make a track", "generate audio", or wants to programmatically use Suno web workflows for custom lyrics, tags, voice personas, playlists, covers, remasters, speed edits, or stems. Also use when downloading Suno songs (auto-embeds lyrics into MP3). Run `sunox agent-info` for the full machine-readable capability dump. NOT for writing song prompts/lyrics without generating audio — use `suno-song-generator` for that.
+description: Generate AI music from the terminal using the `sunox` CLI. Use when user asks to "generate a song", "make music", "create AI music", "make a track", "generate audio", or wants to programmatically use Suno web workflows for custom lyrics, tags, voice personas, playlists, covers, remasters, speed edits, or generation-backed stems. Also use when downloading Suno songs (auto-embeds lyrics into MP3). Run `sunox agent-info` for the full machine-readable capability dump. NOT for writing song prompts/lyrics without generating audio.
 ---
 
 # sunox CLI
@@ -16,7 +16,7 @@ Generate AI music from your terminal using direct Suno web workflows, including 
 
 ## When NOT to use
 
-- Writing song lyrics or Suno-formatted prompts without actually generating audio → use the `suno-song-generator` skill instead
+- Writing song lyrics or Suno-formatted prompts without actually generating audio
 - General music theory, composition advice, or non-Suno music tasks
 
 ## Setup (first time on a new machine)
@@ -61,9 +61,45 @@ surface is intentionally small (`sunox <prompt>`, `sunox create`, `sunox
 download`, `sunox add --to`, `sunox login`, `sunox doctor`). For automation,
 use the resource commands exposed by `sunox agent-info`.
 
-Treat generation as an asynchronous workflow: submit with `sunox create`, wait
-with `sunox clip wait`, then fetch media with `sunox clip download` or the
-human shortcut `sunox download`.
+Suno write commands are account-scoped serial by default to avoid accidental
+same-account concurrent mutations. Use `sunox config set serial_mutations false`
+to persistently disable this behavior, `-c serial_mutations=false` for one
+invocation, or `--parallel` for one command.
+Agents should not pass --parallel or disable `serial_mutations` unless the user
+explicitly asks to allow same-account concurrent writes.
+
+Risk control defaults for agents:
+
+- do not run multiple same-account write commands in parallel unless the user
+  explicitly asks for parallel writes or has disabled serial mutations.
+- do not publish clips, playlists, or personas, or make them public, unless the
+  user explicitly asks.
+- do not run delete, trash, purge, or similar destructive commands unless the
+  user explicitly asks. When explicitly requested, pass `-y/--yes` because
+  destructive commands require it.
+- do not force `--captcha` unless the user asks for the browser-backed solver;
+  prefer normal challenge preflight and externally supplied `--token` when
+  provided.
+- never print or commit cookies, Clerk values, JWTs, challenge tokens, or other
+  auth material.
+
+Treat generation and generation-backed edits as asynchronous workflows. After
+`sunox create`, `sunox clip cover`, `sunox clip extend`, `sunox clip concat`,
+`sunox clip stems`, `sunox clip remaster`, or `sunox clip speed` returns a
+new/processing clip ID, call `sunox clip wait <clip_id> --json` before
+download, quality filtering, or playlist decisions unless the user only asked
+to submit.
+
+For simple audio analysis, prefer the existing CDN media: read `audio_url` from
+`sunox clip info <clip_id> --json` or use `sunox clip download`. Do not trigger
+new Suno generation/export work just to inspect audio. Reserve WAV, stems, or
+Studio export workflows for explicit deep-analysis, lossless, or stem requests.
+The current CLI download supports MP3 audio from `clip.audio_url`, and `--video`
+from `clip.video_url` when present. `sunox clip stems` performs
+generation-backed stems extraction; it is not the same as Suno Web Pro Get Stems
+export. Suno Web exposes Pro download choices such as WAV Audio, Get Stems, and
+Video; do not assume those exports are available through this CLI unless `sunox
+agent-info --json` reports a supported command.
 
 ## Human commands
 
@@ -125,14 +161,14 @@ sunox persona clips <persona_id> --page 1
 sunox persona create <clip_id> --name "My Voice" --description "Warm lead vocal"
 sunox persona set <persona_id> --name "My Voice" --description "Warm lead vocal" --public false
 sunox persona processed-clip <processed_clip_id>
-sunox persona publish <persona_id>
+sunox persona publish <persona_id>        # only when the user explicitly asks to make it public
 sunox persona unpublish <persona_id>
 sunox persona love <persona_id>
 sunox persona unlove <persona_id>
 sunox persona toggle-love <persona_id>
 sunox persona delete <persona_id> -y
-sunox persona restore <persona_id> -y
-sunox persona purge <persona_id> -y
+sunox persona restore <persona_id>
+sunox persona purge <persona_id> -y       # only when the user explicitly asks for permanent deletion
 
 # List / search your library
 sunox clip list
@@ -173,7 +209,7 @@ sunox download <clip_id_1> <clip_id_2> --output ./songs/
 
 # Manage clips
 sunox clip set <clip_id> --title "New Title" --lyrics-file updated.txt
-sunox clip publish <clip_id_1> <clip_id_2>          # make public
+sunox clip publish <clip_id_1> <clip_id_2>          # only when the user explicitly asks to make public
 sunox clip publish <clip_id_1> --private            # make private
 sunox clip delete <clip_id> -y
 sunox clip restore <clip_id>
@@ -226,6 +262,10 @@ Remaster models: v5.5 = chirp-flounder, v5 = chirp-carp, v4.5+ = chirp-bass.
 
 - Every command supports `--json`. JSON is **auto-detected** when stdout is piped.
 - Progress messages and errors go to **stderr** so they don't pollute JSON pipelines.
+- Suno write commands are account-scoped serial by default; do not pass --parallel or disable `serial_mutations` unless the user explicitly allows same-account concurrent writes.
+- For simple audio analysis, prefer clip `audio_url` CDN media or `sunox clip download`; current CLI download supports MP3 audio by default. Reserve WAV, stems, Pro video, or Studio export workflows for explicit deep-analysis/lossless requests and only when the CLI exposes support.
+- `playlist remove` submits one remove request per clip. If a later clip fails, JSON errors use code `partial_mutation`; inspect `error.details.succeeded_clip_ids`, `error.details.failed`, and `error.details.not_attempted_clip_ids` before retrying.
+- Do not publish, make public, or run destructive commands unless the user explicitly asks for that action; destructive commands require `-y/--yes`.
 - Errors include actionable suggestions in the JSON envelope.
 
 ```bash
@@ -239,7 +279,7 @@ sunox clip info <clip_id> --json | jq '.data.audio_url'
 | Code | Meaning | What the agent should do |
 |---|---|---|
 | 0 | Success | Continue |
-| 1 | Transient (network, web endpoint) | Retry with backoff |
+| 1 | Runtime, web endpoint, or partial mutation error | Inspect `error.code` and `error.details` before retrying |
 | 2 | Config error | Fix config, do not retry blindly |
 | 3 | Auth error | Run `sunox login` |
 | 4 | Rate limited | Wait 30–60s, then retry |
@@ -276,7 +316,7 @@ sunox clip download $ids --output ./archive/
 - Auth refreshes automatically (~7-day session lifetime).
 - Commands that submit through `/api/generate/v2-web/` preflight `POST /api/c/check` with `ctype=generation`; when no challenge is required, submit uses `token=null` and `token_provider=null`.
 - If Suno requires a challenge, prefer `--token <solved>` when available; use `--captcha` only to force the built-in browser-backed solver.
-- Generation paths (normal, describe, voice persona, cover, extend, stems) use `/api/generate/v2-web/`; create, cover, extend, and stems expose `--token`, `--captcha`, and `--no-captcha`. Remaster and speed use their current web edit/generation routes. You usually only need the subcommands.
+- Generation paths (normal, describe, voice persona, cover, extend, generation-backed stems) use `/api/generate/v2-web/`; create, cover, extend, and stems expose `--token`, `--captcha`, and `--no-captcha`. Remaster and speed use their current web edit/generation routes. `sunox clip stems` is not the same as Suno Web Pro Get Stems export. You usually only need the subcommands.
 - Persona list/detail/clips/create/set/processed-clip/publish/unpublish/love/unlove/toggle-love/delete/restore/purge are available through `sunox persona ...`.
 - Playlist create/list/detail/metadata/add/remove/publish/reorder/save/unsave/like/dislike/restore/delete are available through `sunox playlist ...`; use `playlist set <id> --image-file <path>` for local cover uploads.
 - Clip delete/restore and like/dislike are available through `sunox clip delete`, `sunox clip restore`, `sunox clip like`, and `sunox clip dislike`. `--clear` removes the selected reaction.

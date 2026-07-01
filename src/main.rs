@@ -18,7 +18,12 @@ async fn main() {
             || !std::io::IsTerminal::is_terminal(&std::io::stdout());
 
         if json_mode {
-            output::json::error(e.error_code(), &e.to_string(), e.suggestion());
+            output::json::error_with_details(
+                e.error_code(),
+                &e.to_string(),
+                e.suggestion(),
+                e.details(),
+            );
         } else {
             eprintln!("Error [{}]: {}", e.error_code(), e);
             eprintln!("Hint: {}", e.suggestion());

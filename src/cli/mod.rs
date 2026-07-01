@@ -30,7 +30,7 @@ pub use models::{ModelVersion, RemasterModel, VocalGender};
 pub use persona::{
     PersonaArgs, PersonaClipsArgs, PersonaCommand, PersonaCreateArgs, PersonaDeleteArgs,
     PersonaInfoArgs, PersonaListArgs, PersonaListKind, PersonaLoveArgs, PersonaProcessedClipArgs,
-    PersonaPublishArgs, PersonaSetArgs, PersonaToggleLoveArgs,
+    PersonaPublishArgs, PersonaRestoreArgs, PersonaSetArgs, PersonaToggleLoveArgs,
 };
 pub use playlist::{
     AddArgs, PlaylistArgs, PlaylistCommand, PlaylistCreateArgs, PlaylistDeleteArgs,
@@ -70,6 +70,10 @@ pub struct Cli {
     /// Suppress non-essential output
     #[arg(long, global = true)]
     pub quiet: bool,
+
+    /// Allow this invocation to run Suno write requests concurrently with other sunox processes
+    #[arg(long, global = true)]
+    pub parallel: bool,
 }
 
 #[derive(Subcommand)]

@@ -23,12 +23,11 @@ because they can mutate account state or spend credits. NetLog does not include
 JSON POST bodies, so body schemas in this document come from either local HARs,
 current Rust endpoint tests, or Suno frontend bundle code. Audio upload was
 later live-verified through the CLI for the generic `file_upload` flow. Local
-HARs in `/Users/bytedance/Downloads` were re-audited for
-`studio-api-prod.suno.com` API traffic; `13suno-labs-nostudio-20260630.har`
-contains live generation submit, challenge-check, tag upsample, stem-task,
-clip-reaction, fade, speed-adjust, and upsample request bodies.
-`14suno-labs-nostudio-20260630.har` adds a live playlist-conditioned
-generation request and another speed-adjust request.
+HARs outside this repository were re-audited for `studio-api-prod.suno.com` API
+traffic; `13suno-labs-nostudio-20260630.har` contains live generation submit,
+challenge-check, tag upsample, stem-task, clip-reaction, fade, speed-adjust,
+and upsample request bodies. `14suno-labs-nostudio-20260630.har` adds a live
+playlist-conditioned generation request and another speed-adjust request.
 
 Chrome DevTools Protocol was not available in this run even when Chrome was
 launched with `--remote-debugging-port=9222`; NetLog and bundle analysis were
@@ -36,19 +35,19 @@ used instead.
 
 ## Local HAR Evidence Audit
 
-Audited files:
-- `/Users/bytedance/Downloads/suno-create-20260630.har`
-- `/Users/bytedance/Downloads/suno-create-all-20260630.har`
-- `/Users/bytedance/Downloads/suno-discover-nostudio-20260630.har`
-- `/Users/bytedance/Downloads/suno-explore-nostudio-20260630.har`
-- `/Users/bytedance/Downloads/suno-me-nostudio-20260630.har`
-- `/Users/bytedance/Downloads/suno-account-nostudio-20260630.har`
-- `/Users/bytedance/Downloads/suno-notifications-nostudio-20260630.har`
-- `/Users/bytedance/Downloads/suno-labs-nostudio-20260630.har`
-- `/Users/bytedance/Downloads/1suno-labs-nostudio-20260630.har`
-- `/Users/bytedance/Downloads/12suno-labs-nostudio-20260630.har`
-- `/Users/bytedance/Downloads/13suno-labs-nostudio-20260630.har`
-- `/Users/bytedance/Downloads/14suno-labs-nostudio-20260630.har`
+Audited local HAR evidence, not committed to this repository:
+- `suno-create-20260630.har`
+- `suno-create-all-20260630.har`
+- `suno-discover-nostudio-20260630.har`
+- `suno-explore-nostudio-20260630.har`
+- `suno-me-nostudio-20260630.har`
+- `suno-account-nostudio-20260630.har`
+- `suno-notifications-nostudio-20260630.har`
+- `suno-labs-nostudio-20260630.har`
+- `1suno-labs-nostudio-20260630.har`
+- `12suno-labs-nostudio-20260630.har`
+- `13suno-labs-nostudio-20260630.har`
+- `14suno-labs-nostudio-20260630.har`
 
 Live request-body evidence found:
 - `POST /api/c/check`
@@ -544,6 +543,14 @@ Body: {"clip_ids": ["..."]}
 POST /api/playlist/v2/{playlist_id}/tracks/remove
 Body: {"clip_ids": ["..."]}
 
+Live CLI testing showed that larger batch remove requests can return a Suno
+500 even when removing the same clips one by one succeeds. `sunox playlist
+remove` therefore accepts multiple clip IDs but submits one remove request per
+clip ID. If a later single-clip remove fails, the command stops and returns a
+`partial_mutation` JSON error whose `error.details` includes
+`requested_clip_ids`, `succeeded_clip_ids`, `failed`, and
+`not_attempted_clip_ids`; callers should inspect those fields before retrying.
+
 PATCH /api/playlist/v2/{playlist_id}
 Body: {"metadata": {"is_public": true}}
 
@@ -624,7 +631,7 @@ exposed as `sunox clip speed <clip_id> --multiplier <n>`.
 
 ### Studio multitrack stem export
 Captured from `13suno-labs-nostudio-20260630.har` and the downloaded
-`/Users/bytedance/Downloads/测试描述模式 Stems (129BPM).zip`.
+local artifact `测试描述模式 Stems (129BPM).zip`.
 
 The export flow is Studio-scoped and is not the same as ordinary clip audio
 download:
@@ -720,7 +727,7 @@ Persona create request shape from current Suno Web bundle:
 ```
 
 Persona delete from `Library -> Voices -> My Voices -> Move to trash` was
-captured in `/Users/bytedance/Downloads/1suno-labs-nostudio-20260630.har`:
+captured in local HAR evidence `1suno-labs-nostudio-20260630.har`:
 
 ```
 PUT /api/persona/bulk-trash-personas/

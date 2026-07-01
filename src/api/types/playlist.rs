@@ -154,6 +154,57 @@ pub struct PlaylistTracksRequest {
     pub clip_ids: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct PlaylistTrackMutationReport {
+    pub playlist_id: String,
+    pub action: String,
+    pub requested_clip_ids: Vec<String>,
+    pub succeeded_clip_ids: Vec<String>,
+    pub failed: Vec<PlaylistTrackMutationFailure>,
+    pub not_attempted_clip_ids: Vec<String>,
+}
+
+impl PlaylistTrackMutationReport {
+    pub fn new(
+        playlist_id: &str,
+        action: &str,
+        requested_clip_ids: &[String],
+        succeeded_clip_ids: Vec<String>,
+        failed: Vec<PlaylistTrackMutationFailure>,
+        not_attempted_clip_ids: Vec<String>,
+    ) -> Self {
+        Self {
+            playlist_id: playlist_id.to_string(),
+            action: action.to_string(),
+            requested_clip_ids: requested_clip_ids.to_vec(),
+            succeeded_clip_ids,
+            failed,
+            not_attempted_clip_ids,
+        }
+    }
+
+    pub fn is_success(&self) -> bool {
+        self.failed.is_empty() && self.not_attempted_clip_ids.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PlaylistTrackMutationFailure {
+    pub clip_id: String,
+    pub error_code: String,
+    pub message: String,
+}
+
+impl PlaylistTrackMutationFailure {
+    pub fn from_error(clip_id: &str, error: &crate::core::CliError) -> Self {
+        Self {
+            clip_id: clip_id.to_string(),
+            error_code: error.error_code().to_string(),
+            message: error.to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct SetPlaylistVisibilityRequest {
     pub metadata: PlaylistVisibilityMetadata,

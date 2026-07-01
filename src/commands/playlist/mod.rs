@@ -7,7 +7,7 @@ use crate::cli::{
     PlaylistListArgs, PlaylistPublishArgs, PlaylistReactionArgs, PlaylistReorderArgs,
     PlaylistRestoreArgs, PlaylistSaveArgs, PlaylistSetArgs, PlaylistTracksArgs,
 };
-use crate::core::{CliError, ensure_clip_ids};
+use crate::core::{CliError, ensure_clip_ids, ensure_destructive_confirmed};
 use crate::output::{self, OutputFormat};
 use crate::workflow::image_upload;
 
@@ -55,6 +55,7 @@ async fn info(args: PlaylistInfoArgs, ctx: &AppContext) -> Result<(), CliError> 
 }
 
 async fn create(args: PlaylistCreateArgs, ctx: &AppContext) -> Result<(), CliError> {
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
     let client = ctx.client().await?;
     let uploaded_cover = if let Some(image_file) = args.image_file.as_deref() {
         if !ctx.quiet {
@@ -98,6 +99,7 @@ async fn set(args: PlaylistSetArgs, ctx: &AppContext) -> Result<(), CliError> {
         ));
     }
 
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
     let client = ctx.client().await?;
     let mut playlist =
         if args.name.is_some() || args.description.is_some() || args.image_url.is_some() {
@@ -134,6 +136,7 @@ async fn set(args: PlaylistSetArgs, ctx: &AppContext) -> Result<(), CliError> {
 
 async fn add(args: PlaylistTracksArgs, ctx: &AppContext) -> Result<(), CliError> {
     ensure_clip_ids(&args.clip_ids)?;
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
     ctx.client()
         .await?
         .add_clips_to_playlist(&args.id, &args.clip_ids)
@@ -151,23 +154,34 @@ async fn add(args: PlaylistTracksArgs, ctx: &AppContext) -> Result<(), CliError>
 
 async fn remove(args: PlaylistTracksArgs, ctx: &AppContext) -> Result<(), CliError> {
     ensure_clip_ids(&args.clip_ids)?;
-    ctx.client()
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
+    let report = ctx
+        .client()
         .await?
         .remove_clips_from_playlist(&args.id, &args.clip_ids)
         .await?;
+    if !report.is_success() {
+        return Err(CliError::PartialMutation {
+            message: format!(
+                "playlist remove for {} succeeded for {} clip(s), failed for {} clip(s), and left {} clip(s) not attempted",
+                args.id,
+                report.succeeded_clip_ids.len(),
+                report.failed.len(),
+                report.not_attempted_clip_ids.len()
+            ),
+            details: serde_json::to_value(&report)?,
+        });
+    }
     match ctx.fmt {
-        OutputFormat::Json => output::json::success(json!({
-            "playlist_id": args.id,
-            "clip_ids": args.clip_ids,
-            "action": "remove"
-        })),
-        OutputFormat::Table => eprintln!("Removed {} clip(s)", args.clip_ids.len()),
+        OutputFormat::Json => output::json::success(&report),
+        OutputFormat::Table => eprintln!("Removed {} clip(s)", report.succeeded_clip_ids.len()),
     }
     Ok(())
 }
 
 async fn publish(args: PlaylistPublishArgs, ctx: &AppContext) -> Result<(), CliError> {
     let is_public = !args.private;
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
     ctx.client()
         .await?
         .set_playlist_visibility(&args.id, is_public)
@@ -184,6 +198,7 @@ async fn publish(args: PlaylistPublishArgs, ctx: &AppContext) -> Result<(), CliE
 }
 
 async fn reorder(args: PlaylistReorderArgs, ctx: &AppContext) -> Result<(), CliError> {
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
     ctx.client()
         .await?
         .reorder_playlist_clip(&args.id, &args.clip_id, args.index)
@@ -203,6 +218,7 @@ async fn reorder(args: PlaylistReorderArgs, ctx: &AppContext) -> Result<(), CliE
 }
 
 async fn restore(args: PlaylistRestoreArgs, ctx: &AppContext) -> Result<(), CliError> {
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
     ctx.client().await?.restore_playlist(&args.id).await?;
     match ctx.fmt {
         OutputFormat::Json => {
@@ -214,6 +230,7 @@ async fn restore(args: PlaylistRestoreArgs, ctx: &AppContext) -> Result<(), CliE
 }
 
 async fn save(args: PlaylistSaveArgs, ctx: &AppContext) -> Result<(), CliError> {
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
     ctx.client().await?.save_playlist(&args.id).await?;
     match ctx.fmt {
         OutputFormat::Json => {
@@ -225,6 +242,7 @@ async fn save(args: PlaylistSaveArgs, ctx: &AppContext) -> Result<(), CliError> 
 }
 
 async fn unsave(args: PlaylistSaveArgs, ctx: &AppContext) -> Result<(), CliError> {
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
     ctx.client().await?.unsave_playlist(&args.id).await?;
     match ctx.fmt {
         OutputFormat::Json => {
@@ -249,6 +267,7 @@ async fn react(
     reaction: PlaylistReaction,
 ) -> Result<(), CliError> {
     let next_reaction = if args.clear { None } else { Some(reaction) };
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
     ctx.client()
         .await?
         .set_playlist_reaction(&args.id, next_reaction)
@@ -271,12 +290,8 @@ async fn react(
 }
 
 async fn delete(args: PlaylistDeleteArgs, ctx: &AppContext) -> Result<(), CliError> {
-    if !args.yes {
-        eprintln!("Deleting playlist {}", args.id);
-        eprintln!("Use -y to skip confirmation, or press Ctrl+C to cancel");
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-    }
-
+    ensure_destructive_confirmed(args.yes, "sunox playlist delete")?;
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
     ctx.client().await?.trash_playlist(&args.id).await?;
     match ctx.fmt {
         OutputFormat::Json => {

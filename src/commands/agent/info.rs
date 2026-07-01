@@ -33,7 +33,24 @@ pub async fn agent_info(_ctx: &AppContext) -> Result<(), CliError> {
         "workflow": {
             "create": "submit generation or description and return clip payload",
             "clip wait": "poll clip ids until complete or error",
-            "clip download": "download completed media and embed MP3 lyrics"
+            "clip download": "download completed media and embed MP3 lyrics",
+            "post_submit_workflow": "When create or a generation-backed edit returns new or processing clip IDs, call `sunox clip wait <clip_id> --json` before download, quality filtering, or playlist decisions unless the caller explicitly wants submit-only behavior.",
+            "audio_analysis": {
+                "simple": "For simple audio analysis, use the existing clip media: read audio_url from `sunox clip info <clip_id> --json` or run `sunox clip download <clip_id> --json`; do not create new Suno resources just to inspect audio.",
+                "deep": "Use heavier WAV, stems, or Studio export workflows only when the user explicitly asks for WAV, stems, lossless audio, or deep spectral analysis; do not silently downgrade a WAV/lossless request to MP3."
+            },
+            "download_formats": {
+                "current_cli": "current CLI download supports MP3 audio from clip.audio_url and `--video` from clip.video_url when present",
+                "web_pro_choices": "Suno Web exposes Pro download choices such as WAV Audio, Get Stems, and Video; do not assume they are available through this CLI unless agent-info reports a command for them. `sunox clip stems` is generation-backed stems extraction and is not the same as Suno Web Pro Get Stems export.",
+                "agent_default": "Use MP3/audio_url for routine listening, preview, transcription, and lightweight analysis. Use Pro/WAV/stems/video paths only when explicitly requested and supported."
+            }
+        },
+        "execution_policy": {
+            "default_mutations": "account-scoped serial execution for Suno create, upload, edit, playlist, persona, and other write commands",
+            "config_disable": "set serial_mutations=false with `sunox config set serial_mutations false`, `-c serial_mutations=false`, or SUNO_SERIAL_MUTATIONS=false to disable the account-scoped mutation lock",
+            "native_batch": "commands may still use a Suno endpoint's native batch body when the endpoint is reliable; playlist remove is intentionally one request per clip because large remove batches can return Suno 500s",
+            "parallel_override": "pass --parallel for a single invocation override; it takes precedence over serial_mutations",
+            "agent_parallel_guidance": "Agents should not pass --parallel or disable serial_mutations unless the user explicitly asks to allow same-account concurrent writes."
         },
         "human_commands": [
             "sunox <prompt>",
@@ -62,9 +79,21 @@ pub async fn agent_info(_ctx: &AppContext) -> Result<(), CliError> {
             "contract": [
                 "run sunox agent-info for current capabilities",
                 "prefer --json for machine-readable command output",
-                "treat create as submit-only; use clip wait then clip download for finished audio",
+                "after any command returns new clip IDs, call clip wait before download, filtering, or playlist decisions unless submit-only behavior was requested",
+                "do not pass --parallel or disable serial_mutations unless the user explicitly opts into same-account concurrent writes",
+                "for simple audio analysis, use existing clip audio_url or clip download; reserve WAV, stems, or Studio export workflows for explicit deep-analysis or lossless requests",
+                "do not publish, make public, or run destructive commands unless the user explicitly asked for that action; destructive commands require -y/--yes",
                 "use semantic exit codes to decide retry, auth, and config actions"
             ]
+        },
+        "agent_safety": {
+            "parallel_writes": "do not pass --parallel or disable serial_mutations unless the user explicitly asks to allow same-account concurrent writes",
+            "paid_or_credit_work": "create, cover, extend, stems, remaster, speed, upload, and Pro download/export workflows can be stateful or credit/plan-sensitive; only run the amount and format the user requested",
+            "download_quality": "current CLI download supports MP3 by default; Suno Web exposes Pro download choices including WAV Audio, Get Stems, and Video, but agents should only use supported Pro/export commands when explicitly requested",
+            "public_visibility": "do not publish clips, playlists, or personas or make them public unless the user explicitly asks",
+            "destructive_actions": "do not run delete, trash, purge, or other destructive commands unless the user explicitly asks; when explicitly requested, pass -y/--yes because destructive commands require it",
+            "captcha": "do not force --captcha unless the user asks for the browser-backed solver; prefer normal challenge preflight and externally supplied --token when provided",
+            "secrets": "never print, persist in project files, or include auth cookies, Clerk values, JWTs, or challenge tokens in prompts, logs, README examples, or commits"
         },
         "command_notes": {
             "create": {
@@ -92,12 +121,18 @@ pub async fn agent_info(_ctx: &AppContext) -> Result<(), CliError> {
             },
             "clip stems": {
                 "route": "POST /api/generate/v2-web/",
+                "status": "generation-backed stems extraction; not the same as Suno Web Pro Get Stems export",
                 "body_constraints": "task=gen_stem, mv=chirp-v3-0, make_instrumental=true, stem_type_id=91, stem_type_group_name=Twelve, stem_task=twelve",
                 "response": "generation response with multiple chirp-stem clips"
             },
-            "generate_backed_clip_edits": {
-                "commands": ["clip cover", "clip extend", "clip stems"],
-                "challenge_flags": "these commands expose --token, --captcha, and --no-captcha because they submit through /api/generate/v2-web/ and can hit the same generation challenge gate"
+            "challenge_capable_generation_commands": {
+                "commands": ["create", "describe", "clip cover", "clip extend", "clip stems"],
+                "challenge_flags": "only these commands expose --token, --captcha, and --no-captcha because they submit through /api/generate/v2-web/ and can hit the generation challenge gate"
+            },
+            "async_clip_edits": {
+                "commands": ["clip cover", "clip extend", "clip concat", "clip stems", "clip remaster", "clip speed"],
+                "post_submit_workflow": "these commands can return new or processing clip IDs; wait for returned clip IDs before downstream download, filtering, or playlist mutation",
+                "challenge_note": "only clip cover, clip extend, and clip stems expose challenge flags; clip concat, clip remaster, and clip speed use their own edit routes and do not expose --token, --captcha, or --no-captcha"
             },
             "clip speed": {
                 "route": "POST /api/clips/adjust-speed/",
@@ -167,7 +202,7 @@ pub async fn agent_info(_ctx: &AppContext) -> Result<(), CliError> {
         "config": {
             "set": "sunox config set <key> <value> persists to config.toml",
             "env_override": "SUNO_* environment variables override persisted config values",
-            "keys": ["default_model", "poll_interval_secs", "poll_timeout_secs", "output_dir"]
+            "keys": ["default_model", "poll_interval_secs", "poll_timeout_secs", "output_dir", "serial_mutations"]
         },
         "resource_management": {
             "clip": {
@@ -206,12 +241,13 @@ pub async fn agent_info(_ctx: &AppContext) -> Result<(), CliError> {
                     "playlist delete"
                 ],
                 "cover_status": "playlist set/create support --image-file for local image upload; uploaded covers use POST /api/uploads/image/, presigned S3 form upload, POST /api/uploads/image/{id}/upload-finish/, then PATCH /api/playlist/v2/{id} with metadata.cover_url, metadata.cover_image_s3_id, and metadata.cover_is_user_set=true",
-                "cover_url_status": "playlist set --image-url accepts existing Suno uploaded image URLs such as https://cdn2.suno.ai/image_<upload_id>.jpeg and maps them to the same v2 cover metadata patch; arbitrary external URLs still use the legacy set_metadata route"
+                "cover_url_status": "playlist set --image-url accepts existing Suno uploaded image URLs such as https://cdn2.suno.ai/image_<upload_id>.jpeg and maps them to the same v2 cover metadata patch; arbitrary external URLs still use the legacy set_metadata route",
+                "remove_status": "playlist remove accepts multiple clip IDs but submits one POST /api/playlist/v2/{playlist_id}/tracks/remove request per clip ID because larger batch remove requests can return Suno 500s. If a later item fails, the command returns partial_mutation with error.details containing requested_clip_ids, succeeded_clip_ids, failed, and not_attempted_clip_ids."
             }
         },
         "exit_codes": {
             "0": "success",
-            "1": "transient error (network, web endpoint) — retry",
+            "1": "runtime, web endpoint, or partial mutation error; inspect error.code and error.details before retrying",
             "2": "configuration error — check config",
             "3": "auth error — run `sunox login`",
             "4": "rate limited — wait and retry",

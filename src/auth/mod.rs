@@ -5,6 +5,8 @@ mod clerk;
 mod cookie;
 mod environment;
 mod interactive;
+mod refresh;
+mod refresh_lock;
 mod state;
 mod token;
 mod types;
@@ -14,6 +16,10 @@ pub use clerk::{clerk_refresh_jwt, clerk_token_exchange};
 pub use cookie::normalize_cookie_input;
 pub(crate) use cookie::{is_suno_auth_cookie_domain, is_suno_cookie_domain};
 pub use interactive::{delete_interactive_browser_profile, extract_interactive_browser_auth};
+pub(crate) use refresh::{
+    refresh_state_explicit, refresh_state_for_retry, refresh_state_if_needed,
+};
+pub(crate) use refresh_lock::AuthRefreshLockGuard;
 pub use state::AuthState;
 pub use token::browser_token;
 #[allow(unused_imports)]

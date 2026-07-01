@@ -17,6 +17,7 @@ fn with_isolated_home<'a>(cmd: &'a mut Command, test_home: &Path) -> &'a mut Com
         .env_remove("SUNO_POLL_INTERVAL_SECS")
         .env_remove("SUNO_POLL_TIMEOUT_SECS")
         .env_remove("SUNO_OUTPUT_DIR")
+        .env_remove("SUNO_SERIAL_MUTATIONS")
 }
 
 #[test]
@@ -35,6 +36,7 @@ fn help_lists_codex_style_commands() {
         .stdout(predicate::str::contains("logout"))
         .stdout(predicate::str::contains("doctor"))
         .stdout(predicate::str::contains("-c, --config <key=value>"))
+        .stdout(predicate::str::contains("--parallel"))
         .stdout(predicate::str::contains("generate").not());
 }
 
@@ -339,6 +341,19 @@ fn install_skill_prints_current_generation_guidance() {
         .stdout(predicate::str::contains("token=null"))
         .stdout(predicate::str::contains("--captcha"))
         .stdout(predicate::str::contains("sunox create --title"))
+        .stdout(predicate::str::contains("returned clip ID"))
+        .stdout(predicate::str::contains("do not pass --parallel"))
+        .stdout(predicate::str::contains("simple audio analysis"))
+        .stdout(predicate::str::contains(
+            "current CLI download supports MP3",
+        ))
+        .stdout(predicate::str::contains("do not publish"))
+        .stdout(predicate::str::contains("destructive commands require"))
+        .stdout(predicate::str::contains("WAV"))
+        .stdout(predicate::str::contains(
+            "not the same as Suno Web Pro Get Stems export",
+        ))
+        .stdout(predicate::str::contains("error.details"))
         .stdout(predicate::str::contains("sunox clip upload <file>"))
         .stdout(predicate::str::contains("sunox clip speed <clip_id>"));
 }
@@ -376,9 +391,12 @@ fn install_skill_accepts_explicit_codex_target() {
 
 #[test]
 fn set_rejects_empty_update_before_auth() {
+    let test_home = isolated_test_home("sunox-cli-set-before-auth-test");
+
     let mut cmd = Command::cargo_bin("sunox").expect("binary");
 
-    cmd.args(["clip", "set", "clip-a", "--json"])
+    with_isolated_home(&mut cmd, &test_home)
+        .args(["clip", "set", "clip-a", "--json"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("\"code\": \"config_error\""))
@@ -436,13 +454,86 @@ fn top_level_download_help_is_user_facing() {
 
 #[test]
 fn top_level_add_requires_clip_ids_before_auth() {
+    let test_home = isolated_test_home("sunox-cli-add-before-auth-test");
+
     let mut cmd = Command::cargo_bin("sunox").expect("binary");
 
-    cmd.args(["add", "--to", "playlist-a", "--json"])
+    with_isolated_home(&mut cmd, &test_home)
+        .args(["add", "--to", "playlist-a", "--json"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("\"code\": \"config_error\""))
         .stderr(predicate::str::contains("no clip IDs provided"));
+}
+
+#[test]
+fn playlist_remove_rejects_empty_ids_before_auth() {
+    let test_home = isolated_test_home("sunox-cli-playlist-remove-before-auth-test");
+
+    let mut cmd = Command::cargo_bin("sunox").expect("binary");
+
+    with_isolated_home(&mut cmd, &test_home)
+        .args(["playlist", "remove", "playlist-a", "--json"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("\"code\": \"config_error\""))
+        .stderr(predicate::str::contains("no clip IDs provided"));
+}
+
+#[test]
+fn clip_delete_requires_yes_before_auth() {
+    let test_home = isolated_test_home("sunox-cli-clip-delete-yes-test");
+
+    let mut cmd = Command::cargo_bin("sunox").expect("binary");
+
+    with_isolated_home(&mut cmd, &test_home)
+        .args(["clip", "delete", "clip-a", "--json"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("\"code\": \"config_error\""))
+        .stderr(predicate::str::contains("requires -y/--yes"));
+}
+
+#[test]
+fn playlist_delete_requires_yes_before_auth() {
+    let test_home = isolated_test_home("sunox-cli-playlist-delete-yes-test");
+
+    let mut cmd = Command::cargo_bin("sunox").expect("binary");
+
+    with_isolated_home(&mut cmd, &test_home)
+        .args(["playlist", "delete", "playlist-a", "--json"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("\"code\": \"config_error\""))
+        .stderr(predicate::str::contains("requires -y/--yes"));
+}
+
+#[test]
+fn persona_purge_requires_yes_before_auth() {
+    let test_home = isolated_test_home("sunox-cli-persona-purge-yes-test");
+
+    let mut cmd = Command::cargo_bin("sunox").expect("binary");
+
+    with_isolated_home(&mut cmd, &test_home)
+        .args(["persona", "purge", "persona-a", "--json"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("\"code\": \"config_error\""))
+        .stderr(predicate::str::contains("requires -y/--yes"));
+}
+
+#[test]
+fn playlist_set_rejects_empty_update_before_auth() {
+    let test_home = isolated_test_home("sunox-cli-playlist-set-before-auth-test");
+
+    let mut cmd = Command::cargo_bin("sunox").expect("binary");
+
+    with_isolated_home(&mut cmd, &test_home)
+        .args(["playlist", "set", "playlist-a", "--json"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("\"code\": \"config_error\""))
+        .stderr(predicate::str::contains("provide at least one"));
 }
 
 #[test]
@@ -488,7 +579,8 @@ fn config_show_json_uses_success_envelope() {
         .success()
         .stdout(predicate::str::contains("\"status\": \"success\""))
         .stdout(predicate::str::contains("\"data\""))
-        .stdout(predicate::str::contains("\"default_model\""));
+        .stdout(predicate::str::contains("\"default_model\""))
+        .stdout(predicate::str::contains("\"serial_mutations\": true"));
 }
 
 #[test]
@@ -526,12 +618,21 @@ fn global_config_override_applies_without_persisting() {
 
     let mut cmd = Command::cargo_bin("sunox").expect("binary");
     with_isolated_home(&mut cmd, &test_home)
-        .args(["-c", "default_model=v5", "config", "show", "--json"])
+        .args([
+            "-c",
+            "default_model=v5",
+            "-c",
+            "serial_mutations=false",
+            "config",
+            "show",
+            "--json",
+        ])
         .assert()
         .success()
         .stdout(predicate::str::contains(
             "\"default_model\": \"chirp-crow\"",
-        ));
+        ))
+        .stdout(predicate::str::contains("\"serial_mutations\": false"));
 
     let mut show = Command::cargo_bin("sunox").expect("binary");
     with_isolated_home(&mut show, &test_home)
@@ -540,7 +641,8 @@ fn global_config_override_applies_without_persisting() {
         .success()
         .stdout(predicate::str::contains(
             "\"default_model\": \"chirp-fenix\"",
-        ));
+        ))
+        .stdout(predicate::str::contains("\"serial_mutations\": true"));
 }
 
 #[test]
@@ -569,6 +671,28 @@ fn agent_info_reports_submit_wait_download_workflow() {
         .stdout(predicate::str::contains("\"workflow\""))
         .stdout(predicate::str::contains("\"human_commands\""))
         .stdout(predicate::str::contains("\"machine_commands\""))
+        .stdout(predicate::str::contains("\"execution_policy\""))
+        .stdout(predicate::str::contains("\"agent_safety\""))
+        .stdout(predicate::str::contains("\"post_submit_workflow\""))
+        .stdout(predicate::str::contains("account-scoped"))
+        .stdout(predicate::str::contains("do not pass --parallel"))
+        .stdout(predicate::str::contains("\"audio_analysis\""))
+        .stdout(predicate::str::contains("\"download_formats\""))
+        .stdout(predicate::str::contains(
+            "current CLI download supports MP3",
+        ))
+        .stdout(predicate::str::contains(
+            "Suno Web exposes Pro download choices",
+        ))
+        .stdout(predicate::str::contains("WAV"))
+        .stdout(predicate::str::contains("do not publish"))
+        .stdout(predicate::str::contains("destructive commands require"))
+        .stdout(predicate::str::contains("returned clip IDs"))
+        .stdout(predicate::str::contains("--parallel"))
+        .stdout(predicate::str::contains("partial_mutation"))
+        .stdout(predicate::str::contains(
+            "not the same as Suno Web Pro Get Stems export",
+        ))
         .stdout(predicate::str::contains("sunox download <clip_id>"))
         .stdout(predicate::str::contains(
             "sunox add <clip_id> --to <playlist_id>",
@@ -615,6 +739,7 @@ fn agent_info_reports_submit_wait_download_workflow() {
         .stdout(predicate::str::contains("\"not_implemented\"").not())
         .stdout(predicate::str::contains("deprecated").not())
         .stdout(predicate::str::contains("\"config\""))
+        .stdout(predicate::str::contains("\"serial_mutations\""))
         .stdout(predicate::str::contains("\"agent_targets\""))
         .stdout(predicate::str::contains("\"codex\""))
         .stdout(predicate::str::contains("~/.codex/skills/sunox/SKILL.md"))
@@ -623,4 +748,61 @@ fn agent_info_reports_submit_wait_download_workflow() {
         ))
         .stdout(predicate::str::contains("clip speed"))
         .stdout(predicate::str::contains("config.toml"));
+}
+
+#[test]
+fn agent_info_separates_challenge_capable_commands_from_async_edits() {
+    let output = Command::cargo_bin("sunox")
+        .expect("binary")
+        .args(["agent-info", "--json"])
+        .output()
+        .expect("agent info output");
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+    let agent_info: serde_json::Value = serde_json::from_str(&stdout).expect("agent info json");
+    let command_notes = agent_info["command_notes"]
+        .as_object()
+        .expect("command_notes object");
+
+    let challenge_commands = command_notes["challenge_capable_generation_commands"]["commands"]
+        .as_array()
+        .expect("challenge commands");
+    let challenge_commands = challenge_commands
+        .iter()
+        .map(|value| value.as_str().expect("command string"))
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        challenge_commands,
+        vec![
+            "create",
+            "describe",
+            "clip cover",
+            "clip extend",
+            "clip stems"
+        ]
+    );
+    for command in ["clip concat", "clip remaster", "clip speed"] {
+        assert!(!challenge_commands.contains(&command));
+    }
+
+    let async_edits = command_notes["async_clip_edits"]["commands"]
+        .as_array()
+        .expect("async edit commands");
+    let async_edits = async_edits
+        .iter()
+        .map(|value| value.as_str().expect("command string"))
+        .collect::<Vec<_>>();
+
+    for command in [
+        "clip cover",
+        "clip extend",
+        "clip concat",
+        "clip stems",
+        "clip remaster",
+        "clip speed",
+    ] {
+        assert!(async_edits.contains(&command));
+    }
+    assert!(command_notes.get("generate_backed_clip_edits").is_none());
 }

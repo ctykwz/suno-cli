@@ -2,6 +2,7 @@
 
 mod context;
 mod dispatch;
+mod mutation_lock;
 
 pub use context::AppContext;
 

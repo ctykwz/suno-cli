@@ -5,9 +5,9 @@ use crate::app::AppContext;
 use crate::cli::{
     PersonaArgs, PersonaClipsArgs, PersonaCommand, PersonaCreateArgs, PersonaDeleteArgs,
     PersonaInfoArgs, PersonaListArgs, PersonaListKind, PersonaLoveArgs, PersonaProcessedClipArgs,
-    PersonaPublishArgs, PersonaSetArgs, PersonaToggleLoveArgs,
+    PersonaPublishArgs, PersonaRestoreArgs, PersonaSetArgs, PersonaToggleLoveArgs,
 };
-use crate::core::CliError;
+use crate::core::{CliError, ensure_destructive_confirmed};
 use crate::output::{self, OutputFormat};
 
 pub async fn run(args: PersonaArgs, ctx: &AppContext) -> Result<(), CliError> {
@@ -24,7 +24,7 @@ pub async fn run(args: PersonaArgs, ctx: &AppContext) -> Result<(), CliError> {
         PersonaCommand::Unlove(args) => unlove(args, ctx).await,
         PersonaCommand::ToggleLove(args) => toggle_love(args, ctx).await,
         PersonaCommand::Delete(args) => update_trash(args, ctx, PersonaTrashAction::Trash).await,
-        PersonaCommand::Restore(args) => update_trash(args, ctx, PersonaTrashAction::Restore).await,
+        PersonaCommand::Restore(args) => restore(args, ctx).await,
         PersonaCommand::Purge(args) => update_trash(args, ctx, PersonaTrashAction::Purge).await,
     }
 }
@@ -109,6 +109,7 @@ async fn create(args: PersonaCreateArgs, ctx: &AppContext) -> Result<(), CliErro
         voice_recording_id: None,
         verification_id: None,
     };
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
     let persona = ctx.client().await?.create_persona(&req).await?;
     match ctx.fmt {
         OutputFormat::Json => output::json::success(&persona),
@@ -135,6 +136,7 @@ async fn set(args: PersonaSetArgs, ctx: &AppContext) -> Result<(), CliError> {
         ));
     }
 
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
     let client = ctx.client().await?;
     let current = client.get_persona(&args.id).await?;
     let req = build_edit_persona_request(args, current);
@@ -175,6 +177,7 @@ async fn publish(
     ctx: &AppContext,
     is_public: bool,
 ) -> Result<(), CliError> {
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
     let persona = ctx
         .client()
         .await?
@@ -201,6 +204,7 @@ async fn unlove(args: PersonaLoveArgs, ctx: &AppContext) -> Result<(), CliError>
 }
 
 async fn toggle_love(args: PersonaToggleLoveArgs, ctx: &AppContext) -> Result<(), CliError> {
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
     let response = ctx.client().await?.toggle_persona_love(&args.id).await?;
     match ctx.fmt {
         OutputFormat::Json => output::json::success(&response),
@@ -213,6 +217,7 @@ async fn toggle_love(args: PersonaToggleLoveArgs, ctx: &AppContext) -> Result<()
 }
 
 async fn set_love(args: PersonaLoveArgs, ctx: &AppContext, loved: bool) -> Result<(), CliError> {
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
     let response = ctx
         .client()
         .await?
@@ -231,23 +236,20 @@ async fn set_love(args: PersonaLoveArgs, ctx: &AppContext, loved: bool) -> Resul
 #[derive(Clone, Copy)]
 enum PersonaTrashAction {
     Trash,
-    Restore,
     Purge,
 }
 
 impl PersonaTrashAction {
-    fn label(self) -> &'static str {
+    fn command(self) -> &'static str {
         match self {
-            Self::Trash => "delete",
-            Self::Restore => "restore",
-            Self::Purge => "permanently delete",
+            Self::Trash => "sunox persona delete",
+            Self::Purge => "sunox persona purge",
         }
     }
 
     fn result_key(self) -> &'static str {
         match self {
             Self::Trash => "deleted",
-            Self::Restore => "restored",
             Self::Purge => "purged",
         }
     }
@@ -255,7 +257,6 @@ impl PersonaTrashAction {
     fn past_tense(self) -> &'static str {
         match self {
             Self::Trash => "Deleted",
-            Self::Restore => "Restored",
             Self::Purge => "Permanently deleted",
         }
     }
@@ -266,17 +267,12 @@ async fn update_trash(
     ctx: &AppContext,
     action: PersonaTrashAction,
 ) -> Result<(), CliError> {
-    if !args.yes {
-        eprintln!("Preparing to {} persona {}", action.label(), args.id);
-        eprintln!("Use -y to skip confirmation, or press Ctrl+C to cancel");
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-    }
-
+    ensure_destructive_confirmed(args.yes, action.command())?;
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
     let client = ctx.client().await?;
     let ids = std::slice::from_ref(&args.id);
     let response = match action {
         PersonaTrashAction::Trash => client.trash_personas(ids).await?,
-        PersonaTrashAction::Restore => client.restore_personas(ids).await?,
         PersonaTrashAction::Purge => client.purge_personas(ids).await?,
     };
     let changed = response.updated_persona_ids.contains(&args.id);
@@ -294,6 +290,27 @@ async fn update_trash(
             output::json::success(result)
         }
         OutputFormat::Table => eprintln!("{} persona {}", action.past_tense(), args.id),
+    }
+    Ok(())
+}
+
+async fn restore(args: PersonaRestoreArgs, ctx: &AppContext) -> Result<(), CliError> {
+    let _mutation_guard = ctx.acquire_mutation_lock()?;
+    let client = ctx.client().await?;
+    let ids = std::slice::from_ref(&args.id);
+    let response = client.restore_personas(ids).await?;
+    let changed = response.updated_persona_ids.contains(&args.id);
+    match ctx.fmt {
+        OutputFormat::Json => output::json::success(json!({
+            "persona_id": args.id,
+            "action": "restored",
+            "changed": changed,
+            "restored": changed,
+            "updated_persona_ids": response.updated_persona_ids,
+            "voice_persona_count": response.voice_persona_count,
+            "max_voice_personas": response.max_voice_personas
+        })),
+        OutputFormat::Table => eprintln!("Restored persona {}", args.id),
     }
     Ok(())
 }

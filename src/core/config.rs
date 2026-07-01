@@ -12,6 +12,7 @@ pub struct AppConfig {
     pub poll_interval_secs: u64,
     pub poll_timeout_secs: u64,
     pub output_dir: String,
+    pub serial_mutations: bool,
 }
 
 impl Default for AppConfig {
@@ -21,9 +22,13 @@ impl Default for AppConfig {
             poll_interval_secs: 5,
             poll_timeout_secs: 600,
             output_dir: ".".into(),
+            serial_mutations: true,
         }
     }
 }
+
+const VALID_CONFIG_KEYS: &str =
+    "default_model, poll_interval_secs, poll_timeout_secs, output_dir, serial_mutations";
 
 impl AppConfig {
     pub fn load() -> Result<Self, CliError> {
@@ -87,6 +92,9 @@ impl AppConfig {
                     self.poll_timeout_secs = parse_u64("SUNO_POLL_TIMEOUT_SECS", &value)?;
                 }
                 "SUNO_OUTPUT_DIR" => self.output_dir = value,
+                "SUNO_SERIAL_MUTATIONS" => {
+                    self.serial_mutations = parse_bool("SUNO_SERIAL_MUTATIONS", &value)?;
+                }
                 _ => {}
             }
         }
@@ -111,9 +119,10 @@ impl AppConfig {
             "poll_interval_secs" => self.poll_interval_secs = parse_u64(key, &value)?,
             "poll_timeout_secs" => self.poll_timeout_secs = parse_u64(key, &value)?,
             "output_dir" => self.output_dir = value,
+            "serial_mutations" => self.serial_mutations = parse_bool(key, &value)?,
             _ => {
                 return Err(CliError::Config(format!(
-                    "unknown config key `{key}`; valid keys: default_model, poll_interval_secs, poll_timeout_secs, output_dir"
+                    "unknown config key `{key}`; valid keys: {VALID_CONFIG_KEYS}"
                 )));
             }
         }
@@ -131,6 +140,8 @@ struct StoredConfig {
     poll_timeout_secs: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     output_dir: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    serial_mutations: Option<bool>,
 }
 
 impl StoredConfig {
@@ -148,9 +159,10 @@ impl StoredConfig {
             "poll_interval_secs" => self.poll_interval_secs = Some(parse_u64(key, value)?),
             "poll_timeout_secs" => self.poll_timeout_secs = Some(parse_u64(key, value)?),
             "output_dir" => self.output_dir = Some(value.to_string()),
+            "serial_mutations" => self.serial_mutations = Some(parse_bool(key, value)?),
             _ => {
                 return Err(CliError::Config(format!(
-                    "unknown config key `{key}`; valid keys: default_model, poll_interval_secs, poll_timeout_secs, output_dir"
+                    "unknown config key `{key}`; valid keys: {VALID_CONFIG_KEYS}"
                 )));
             }
         }
@@ -196,6 +208,16 @@ fn parse_u64(key: &str, value: &str) -> Result<u64, CliError> {
         .map_err(|_| CliError::Config(format!("config key `{key}` expects an unsigned integer")))
 }
 
+fn parse_bool(key: &str, value: &str) -> Result<bool, CliError> {
+    match value {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        _ => Err(CliError::Config(format!(
+            "config key `{key}` expects true or false"
+        ))),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{AppConfig, StoredConfig};
@@ -230,6 +252,22 @@ mod tests {
     }
 
     #[test]
+    fn serial_mutations_defaults_to_true() {
+        let config = AppConfig::default();
+
+        assert!(config.serial_mutations);
+    }
+
+    #[test]
+    fn serial_mutations_can_be_set_persistently() {
+        let mut config = StoredConfig::default();
+
+        config.set("serial_mutations", "false").expect("set config");
+
+        assert_eq!(config.serial_mutations, Some(false));
+    }
+
+    #[test]
     fn stored_config_rejects_unknown_keys() {
         let mut config = StoredConfig::default();
 
@@ -251,6 +289,7 @@ mod tests {
                     "SUNO_OUTPUT_DIR".to_string(),
                     "/tmp/suno-output".to_string(),
                 ),
+                ("SUNO_SERIAL_MUTATIONS".to_string(), "false".to_string()),
             ])
             .expect("env overrides");
 
@@ -258,6 +297,29 @@ mod tests {
         assert_eq!(config.poll_interval_secs, 9);
         assert_eq!(config.poll_timeout_secs, 777);
         assert_eq!(config.output_dir, "/tmp/suno-output");
+        assert!(!config.serial_mutations);
+    }
+
+    #[test]
+    fn serial_mutations_override_accepts_boolean_value() {
+        let mut config = AppConfig::default();
+
+        config
+            .apply_overrides(&["serial_mutations=false".to_string()])
+            .expect("apply override");
+
+        assert!(!config.serial_mutations);
+    }
+
+    #[test]
+    fn serial_mutations_rejects_non_boolean_value() {
+        let mut config = AppConfig::default();
+
+        let err = config
+            .apply_overrides(&["serial_mutations=fast".to_string()])
+            .expect_err("invalid bool");
+
+        assert!(err.to_string().contains("expects true or false"));
     }
 
     #[test]

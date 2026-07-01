@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use crate::core::CliError;
 
 const BROWSER_PATH_ENV: &str = "SUNO_BROWSER_PATH";
-const LEGACY_CHROME_PATH_ENV: &str = "SUNO_CHROME_PATH";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TargetOs {
@@ -35,23 +34,20 @@ fn configured_browser_path<F>(env_var: F) -> Result<Option<String>, CliError>
 where
     F: Fn(&str) -> Option<String>,
 {
-    for key in [BROWSER_PATH_ENV, LEGACY_CHROME_PATH_ENV] {
-        let Some(path) = env_var(key) else {
-            continue;
-        };
-        let path = path.trim();
-        if path.is_empty() {
-            continue;
-        }
-        if Path::new(path).exists() {
-            return Ok(Some(path.to_string()));
-        }
-        return Err(CliError::Config(format!(
-            "{key} points to a missing file: {path}"
-        )));
+    let Some(path) = env_var(BROWSER_PATH_ENV) else {
+        return Ok(None);
+    };
+    let path = path.trim();
+    if path.is_empty() {
+        return Ok(None);
+    }
+    if Path::new(path).exists() {
+        return Ok(Some(path.to_string()));
     }
 
-    Ok(None)
+    Err(CliError::Config(format!(
+        "{BROWSER_PATH_ENV} points to a missing file: {path}"
+    )))
 }
 
 fn current_target_os() -> TargetOs {
@@ -118,20 +114,35 @@ mod tests {
     use super::*;
 
     #[test]
-    fn browser_path_env_takes_precedence_over_legacy_chrome_path() {
+    fn browser_path_env_uses_configured_browser_path() {
         let browser_path =
             std::env::temp_dir().join(format!("sunox-browser-path-test-{}", uuid::Uuid::new_v4()));
         std::fs::write(&browser_path, "").expect("browser stub");
 
         let configured = configured_browser_path(|key| match key {
             BROWSER_PATH_ENV => Some(browser_path.display().to_string()),
-            LEGACY_CHROME_PATH_ENV => Some("missing-legacy-browser".into()),
             _ => None,
         })
         .expect("configured path")
         .expect("path");
 
         assert_eq!(configured, browser_path.display().to_string());
+        let _ = std::fs::remove_file(browser_path);
+    }
+
+    #[test]
+    fn chrome_path_env_is_ignored() {
+        let browser_path =
+            std::env::temp_dir().join(format!("sunox-browser-path-test-{}", uuid::Uuid::new_v4()));
+        std::fs::write(&browser_path, "").expect("browser stub");
+
+        let configured = configured_browser_path(|key| match key {
+            "SUNO_CHROME_PATH" => Some(browser_path.display().to_string()),
+            _ => None,
+        })
+        .expect("configured path");
+
+        assert!(configured.is_none());
         let _ = std::fs::remove_file(browser_path);
     }
 

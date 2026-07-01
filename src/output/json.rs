@@ -19,8 +19,13 @@ pub fn success<T: Serialize>(data: T) {
     );
 }
 
-pub fn error(code: &str, message: &str, suggestion: &str) {
-    let envelope = serde_json::json!({
+pub fn error_with_details(
+    code: &str,
+    message: &str,
+    suggestion: &str,
+    details: Option<&serde_json::Value>,
+) {
+    let mut envelope = serde_json::json!({
         "version": "1",
         "status": "error",
         "error": {
@@ -29,6 +34,9 @@ pub fn error(code: &str, message: &str, suggestion: &str) {
             "suggestion": suggestion,
         }
     });
+    if let Some(details) = details {
+        envelope["error"]["details"] = details.clone();
+    }
     eprintln!(
         "{}",
         serde_json::to_string_pretty(&envelope).unwrap_or_default()
