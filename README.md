@@ -171,7 +171,7 @@ sunox clip delete <ids>    Delete/trash clips
 sunox clip restore <ids>   Restore trashed clips
 sunox clip like <ids>      Like clips (--clear to remove like)
 sunox clip dislike <ids>   Dislike clips (--clear to remove dislike)
-sunox clip set <id>        Update title, lyrics, caption, or remove cover
+sunox clip set <id>        Update title, lyrics, caption, or cover
 sunox clip publish <ids>   Toggle public/private visibility (--private for private)
 sunox playlist create Create a playlist
 sunox playlist set <id> Update playlist name or description
@@ -329,6 +329,12 @@ sunox clip info <clip_id> --json | jq '.data.audio_url'
 # Update title and lyrics on an existing clip
 sunox clip set <clip_id> --title "New Title" --lyrics-file updated.txt
 
+# Replace or remove a clip cover
+sunox clip set <clip_id> --image-file ./cover.png
+sunox clip set <clip_id> --image-url <cover_url>
+sunox clip set <clip_id> --remove-cover
+sunox clip set <clip_id> --remove-video-cover
+
 # Make clips public
 sunox clip publish <clip_id_1> <clip_id_2>
 
@@ -478,9 +484,9 @@ After installation, your coding agent automatically picks up the skill on the ne
 | Clip trash/restore | `POST /api/gen/trash` | Bundle-confirmed, not live-mutated by tests |
 | Clip reaction | `POST /api/gen/{id}/update_reaction_type/` | HAR-confirmed body with `recommendation_metadata` |
 | Audio upload | `POST /api/uploads/audio/`, presigned S3 form upload, `POST /api/uploads/audio/{id}/upload-finish/`, `GET /api/uploads/audio/{id}/`, `POST /api/uploads/audio/{id}/initialize-clip/` | CLI workflow implemented and live-verified for `file_upload` |
-| Image upload | `POST /api/uploads/image/`, presigned S3 form upload, `POST /api/uploads/image/{id}/upload-finish/` | CLI workflow implemented for playlist covers; final cover patch uses `PATCH /api/playlist/v2/{id}` with `cover_url`, `cover_image_s3_id`, `cover_is_user_set` |
+| Image upload | `POST /api/uploads/image/`, presigned S3 form upload, `POST /api/uploads/image/{id}/upload-finish/` | CLI workflow implemented for clip and playlist covers; playlist cover patch uses `PATCH /api/playlist/v2/{id}` with `cover_url`, `cover_image_s3_id`, `cover_is_user_set`; clip cover patch uses `POST /api/gen/{id}/set_metadata/` with `image_url` |
 
-Generation tasks use `/api/generate/v2-web/`. The custom create payload was live-recaptured on June 30, 2026: custom lyrics are sent as `gpt_description_prompt` while `prompt` stays empty, and a solved challenge token uses `token_provider: 1`. Instrumental create also uses custom mode; when `sunox create --instrumental <prompt>` is used, the prompt is folded into style tags and the submitted `prompt` field stays empty, matching the live web request shape recaptured in `15suno-labs-nostudio-20260630.har`. `task: "playlist_condition"` was also captured and intentionally treated as a separate inspiration flow because it puts lyrics in `prompt`. Remaster uses the live-captured `/api/generate/upsample` route, and speed adjust uses `/api/clips/adjust-speed/`. Commands that submit through `/api/generate/v2-web/` preflight `/api/c/check` with `ctype=generation`; when no challenge is required they submit without a challenge token, and when a challenge is required you can use `--token <solved>` to supply one or `--captcha` to force the browser solver on create, cover, extend, and stems. The audio upload workflow was live-verified for `file_upload`, and playlist cover upload was live-verified through image upload plus v2 metadata patch; cover, concat, and other playlist mutation bodies still need live mutation captures.
+Generation tasks use `/api/generate/v2-web/`. The custom create payload was live-recaptured on June 30, 2026: custom lyrics are sent as `gpt_description_prompt` while `prompt` stays empty, and a solved challenge token uses `token_provider: 1`. Instrumental create also uses custom mode; when `sunox create --instrumental <prompt>` is used, the prompt is folded into style tags and the submitted `prompt` field stays empty, matching the live web request shape recaptured in `15suno-labs-nostudio-20260630.har`. `task: "playlist_condition"` was also captured and intentionally treated as a separate inspiration flow because it puts lyrics in `prompt`. Remaster uses the live-captured `/api/generate/upsample` route, and speed adjust uses `/api/clips/adjust-speed/`. Commands that submit through `/api/generate/v2-web/` preflight `/api/c/check` with `ctype=generation`; when no challenge is required they submit without a challenge token, and when a challenge is required you can use `--token <solved>` to supply one or `--captcha` to force the browser solver on create, cover, extend, and stems. The audio upload workflow was live-verified for `file_upload`; clip cover upload was live-verified through image upload plus clip metadata update; playlist cover upload was live-verified through image upload plus v2 metadata patch. Cover, concat, and other playlist mutation bodies still need live mutation captures.
 
 ## Contributing
 

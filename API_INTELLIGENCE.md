@@ -162,8 +162,8 @@ unverified surfaces instead of advertising an empty gap list. As of this pass,
 `sunox agent-info --json` reports video upload, `update_feedback_state`,
 social/profile/project/video surfaces, and stale voice-verification routes,
 plus live-captured playlist-conditioned generation, fade, and Studio export
-surfaces under `unsupported_surfaces`. Image upload is implemented for playlist
-cover replacement.
+surfaces under `unsupported_surfaces`. Image upload is implemented for clip and
+playlist cover replacement.
 
 Read-oriented surfaces worth capturing next:
 - Search: `/api/unified/search/omnisearch`,
@@ -883,15 +883,19 @@ After the clip is initialized, the web UI calls clip metadata update with
 `is_audio_upload_tos_accepted: true`, `image_url`, `title`, and optional
 lyrics.
 
-Image upload was live-verified for playlist cover replacement: initialize with
-`POST /api/uploads/image/` and `{"extension":"png"}`, upload bytes to the
-returned presigned S3 form, finish with
-`POST /api/uploads/image/{upload_id}/upload-finish/` and `{}`, require
-`moderation_status: "approved"`, then use
-`https://cdn2.suno.ai/image_<upload_id>.jpeg` plus
-`cover_image_s3_id: "image_<upload_id>"` in the playlist v2 patch above. The
-legacy `POST /api/playlist/set_metadata` `image_url` path can return
-`Failed to upload image` for freshly uploaded Suno images.
+Image upload was live-verified for clip and playlist cover replacement:
+initialize with `POST /api/uploads/image/` and the file extension (`png`,
+`jpg`, `jpeg`, or `webp`), upload bytes to the returned presigned S3 form,
+finish with
+`POST /api/uploads/image/{upload_id}/upload-finish/` and `{}`, and require
+`moderation_status: "approved"`. Clip cover replacement uses
+`POST /api/gen/{clip_id}/set_metadata/` with
+`{"image_url":"https://cdn2.suno.ai/image_<upload_id>.jpeg"}`. Playlist cover
+replacement uses the same CDN URL plus `cover_image_s3_id:
+"image_<upload_id>"` in the playlist v2 patch above. The legacy
+`POST /api/playlist/set_metadata` `image_url` path can return `Failed to upload
+image` for freshly uploaded Suno images. Clip `remove_video_cover: true` was
+also live-verified through `POST /api/gen/{clip_id}/set_metadata/`.
 Related video upload routes also appear in the current bundle:
 - `POST /api/uploads/video/`
 

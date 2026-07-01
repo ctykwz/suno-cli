@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 #[derive(clap::Args)]
 pub struct InfoArgs {
     /// Clip ID to inspect
@@ -76,9 +78,21 @@ pub struct SetArgs {
     #[arg(long)]
     pub caption: Option<String>,
 
+    /// New clip cover image URL
+    #[arg(long, conflicts_with_all = ["image_file", "remove_cover"])]
+    pub image_url: Option<String>,
+
+    /// Local image file to upload and use as clip cover
+    #[arg(long, conflicts_with_all = ["image_url", "remove_cover"])]
+    pub image_file: Option<PathBuf>,
+
     /// Remove custom cover image
     #[arg(long)]
     pub remove_cover: bool,
+
+    /// Remove custom video cover
+    #[arg(long)]
+    pub remove_video_cover: bool,
 }
 
 #[derive(clap::Args)]

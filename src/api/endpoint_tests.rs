@@ -322,6 +322,39 @@ async fn set_clip_metadata_posts_current_web_contract() {
 }
 
 #[tokio::test]
+async fn set_clip_metadata_posts_cover_contract() {
+    let server = MockServer::json("{}").await;
+    let client = server.client();
+
+    client
+        .set_metadata(
+            "clip-a",
+            &SetMetadataRequest {
+                title: None,
+                lyrics: None,
+                caption: None,
+                image_url: Some("https://cdn2.suno.ai/image_upload-1.jpeg".into()),
+                is_audio_upload_tos_accepted: None,
+                remove_image_cover: None,
+                remove_video_cover: Some(true),
+            },
+        )
+        .await
+        .expect("set metadata");
+
+    let request = server.captured().await;
+    assert_eq!(request.method, "POST");
+    assert_eq!(request.path, "/api/gen/clip-a/set_metadata/");
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&request.body).expect("request json"),
+        serde_json::json!({
+            "image_url": "https://cdn2.suno.ai/image_upload-1.jpeg",
+            "remove_video_cover": true
+        })
+    );
+}
+
+#[tokio::test]
 async fn set_clip_visibility_posts_current_web_contract() {
     let server = MockServer::json("{}").await;
     let client = server.client();

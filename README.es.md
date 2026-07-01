@@ -153,6 +153,9 @@ sunox clip restore <ids>
 sunox clip like <ids>
 sunox clip dislike <ids>
 sunox clip set <id>
+sunox clip set <id> --image-file ./cover.png
+sunox clip set <id> --image-url <cover_url>
+sunox clip set <id> --remove-video-cover
 sunox clip publish <ids>
 sunox add <clip_ids> --to <playlist_id>
 sunox playlist add <playlist_id> <clip_ids>

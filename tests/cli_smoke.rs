@@ -175,6 +175,36 @@ fn playlist_set_help_lists_image_url() {
 }
 
 #[test]
+fn clip_set_help_lists_cover_options() {
+    let mut cmd = Command::cargo_bin("sunox").expect("binary");
+
+    cmd.args(["clip", "set", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--image-url"))
+        .stdout(predicate::str::contains("--image-file"))
+        .stdout(predicate::str::contains("--remove-video-cover"));
+}
+
+#[test]
+fn clip_set_rejects_multiple_cover_sources() {
+    let mut cmd = Command::cargo_bin("sunox").expect("binary");
+
+    cmd.args([
+        "clip",
+        "set",
+        "clip-a",
+        "--image-url",
+        "https://cdn2.suno.ai/image_a.jpeg",
+        "--image-file",
+        "cover.png",
+    ])
+    .assert()
+    .failure()
+    .stderr(predicate::str::contains("cannot be used with"));
+}
+
+#[test]
 fn persona_help_lists_management_subcommands() {
     let mut cmd = Command::cargo_bin("sunox").expect("binary");
 

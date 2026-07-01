@@ -5,6 +5,7 @@ use crate::app::AppContext;
 use crate::cli::{DeleteArgs, PublishArgs, ReactionArgs, RestoreArgs, SetArgs};
 use crate::core::{CliError, ensure_clip_ids};
 use crate::output::{self, OutputFormat};
+use crate::workflow::image_upload;
 
 pub async fn delete(args: DeleteArgs, ctx: &AppContext) -> Result<(), CliError> {
     ensure_clip_ids(&args.ids)?;
@@ -47,7 +48,7 @@ pub async fn set(args: SetArgs, ctx: &AppContext) -> Result<(), CliError> {
     let changes = set_changed_fields(&args);
     if changes.is_empty() {
         return Err(CliError::Config(
-            "provide at least one metadata field: --title, --lyrics, --lyrics-file, --caption, or --remove-cover".into(),
+            "provide at least one metadata field: --title, --lyrics, --lyrics-file, --caption, --image-url, --image-file, --remove-cover, or --remove-video-cover".into(),
         ));
     }
 
@@ -56,16 +57,29 @@ pub async fn set(args: SetArgs, ctx: &AppContext) -> Result<(), CliError> {
         (_, Some(path)) => Some(std::fs::read_to_string(path)?),
         _ => None,
     };
+    let client = ctx.client().await?;
+    let image_url = if let Some(image_file) = args.image_file.as_deref() {
+        if !ctx.quiet {
+            eprintln!("Uploading clip cover image...");
+        }
+        Some(image_upload::run(&client, image_file).await?.image_url)
+    } else {
+        args.image_url.clone()
+    };
     let req = SetMetadataRequest {
         title: args.title.clone(),
         lyrics,
         caption: args.caption.clone(),
-        image_url: None,
+        image_url,
         is_audio_upload_tos_accepted: None,
         remove_image_cover: if args.remove_cover { Some(true) } else { None },
-        remove_video_cover: None,
+        remove_video_cover: if args.remove_video_cover {
+            Some(true)
+        } else {
+            None
+        },
     };
-    ctx.client().await?.set_metadata(&args.id, &req).await?;
+    client.set_metadata(&args.id, &req).await?;
     match ctx.fmt {
         OutputFormat::Json => output::json::success(set_result(&args.id, &changes)),
         OutputFormat::Table => eprintln!("Updated: {}", changes.join(", ")),
@@ -143,8 +157,11 @@ fn set_changed_fields(args: &SetArgs) -> Vec<&'static str> {
     if args.caption.is_some() {
         changes.push("caption");
     }
-    if args.remove_cover {
+    if args.image_url.is_some() || args.image_file.is_some() || args.remove_cover {
         changes.push("cover");
+    }
+    if args.remove_video_cover {
+        changes.push("video_cover");
     }
     changes
 }
@@ -158,8 +175,9 @@ fn set_result(clip_id: &str, changes: &[&str]) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::{clip_ids_result, reaction_result, set_result};
+    use super::{clip_ids_result, reaction_result, set_changed_fields, set_result};
     use crate::api::types::ClipReaction;
+    use crate::cli::SetArgs;
 
     #[test]
     fn delete_result_reports_deleted_clip_ids() {
@@ -203,5 +221,22 @@ mod tests {
                 "updated": ["title", "lyrics"]
             })
         );
+    }
+
+    #[test]
+    fn set_changed_fields_reports_cover_updates() {
+        let args = SetArgs {
+            id: "clip-a".into(),
+            title: None,
+            lyrics: None,
+            lyrics_file: None,
+            caption: None,
+            image_url: Some("https://cdn2.suno.ai/image_upload-1.jpeg".into()),
+            image_file: None,
+            remove_cover: false,
+            remove_video_cover: true,
+        };
+
+        assert_eq!(set_changed_fields(&args), vec!["cover", "video_cover"]);
     }
 }

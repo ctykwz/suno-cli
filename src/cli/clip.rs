@@ -47,7 +47,7 @@ pub enum ClipCommand {
     /// Dislike clip(s), or clear dislikes with --clear
     Dislike(ReactionArgs),
 
-    /// Update clip title, lyrics, or caption
+    /// Update clip metadata and cover
     Set(SetArgs),
 
     /// Toggle clip public/private

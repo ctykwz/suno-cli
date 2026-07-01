@@ -177,7 +177,8 @@ pub async fn agent_info(_ctx: &AppContext) -> Result<(), CliError> {
                     "clip like", "clip dislike", "clip set", "clip publish",
                     "clip timed-lyrics", "clip extend", "clip concat",
                     "clip cover", "clip remaster", "clip speed", "clip stems"
-                ]
+                ],
+                "cover_status": "clip set supports --image-url, --image-file, --remove-cover, and --remove-video-cover; local image files use POST /api/uploads/image/, presigned S3 form upload, POST /api/uploads/image/{id}/upload-finish/, then POST /api/gen/{clip_id}/set_metadata/ with image_url"
             },
             "persona": {
                 "commands": [
