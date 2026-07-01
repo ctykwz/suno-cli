@@ -1,5 +1,23 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
+use std::path::{Path, PathBuf};
+
+fn isolated_test_home(prefix: &str) -> PathBuf {
+    let test_home = std::env::temp_dir().join(format!("{prefix}-{}", uuid::Uuid::new_v4()));
+    let _ = std::fs::remove_dir_all(&test_home);
+    std::fs::create_dir_all(&test_home).expect("test home");
+    test_home
+}
+
+fn with_isolated_home<'a>(cmd: &'a mut Command, test_home: &Path) -> &'a mut Command {
+    cmd.env("HOME", test_home)
+        .env("XDG_CONFIG_HOME", test_home.join(".config"))
+        .env("XDG_DATA_HOME", test_home.join(".local").join("share"))
+        .env_remove("SUNO_DEFAULT_MODEL")
+        .env_remove("SUNO_POLL_INTERVAL_SECS")
+        .env_remove("SUNO_POLL_TIMEOUT_SECS")
+        .env_remove("SUNO_OUTPUT_DIR")
+}
 
 #[test]
 fn help_lists_codex_style_commands() {
@@ -297,15 +315,10 @@ fn install_skill_prints_current_generation_guidance() {
 
 #[test]
 fn install_skill_defaults_to_codex_skill_directory() {
-    let test_home = std::env::temp_dir().join(format!(
-        "sunox-cli-install-skill-codex-default-test-{}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&test_home);
-    std::fs::create_dir_all(&test_home).expect("test home");
+    let test_home = isolated_test_home("sunox-cli-install-skill-codex-default-test");
 
     let mut cmd = Command::cargo_bin("sunox").expect("binary");
-    cmd.env("HOME", &test_home)
+    with_isolated_home(&mut cmd, &test_home)
         .args(["install-skill", "--json"])
         .assert()
         .success()
@@ -320,15 +333,10 @@ fn install_skill_defaults_to_codex_skill_directory() {
 
 #[test]
 fn install_skill_accepts_explicit_codex_target() {
-    let test_home = std::env::temp_dir().join(format!(
-        "sunox-cli-install-skill-codex-explicit-test-{}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&test_home);
-    std::fs::create_dir_all(&test_home).expect("test home");
+    let test_home = isolated_test_home("sunox-cli-install-skill-codex-explicit-test");
 
     let mut cmd = Command::cargo_bin("sunox").expect("binary");
-    cmd.env("HOME", &test_home)
+    with_isolated_home(&mut cmd, &test_home)
         .args(["install-skill", "--target", "codex", "--json"])
         .assert()
         .success()
@@ -422,20 +430,17 @@ fn top_level_add_help_uses_playlist_language() {
 
 #[test]
 fn config_set_persists_in_isolated_home() {
-    let test_home =
-        std::env::temp_dir().join(format!("sunox-cli-config-test-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&test_home);
-    std::fs::create_dir_all(&test_home).expect("test home");
+    let test_home = isolated_test_home("sunox-cli-config-test");
 
     let mut cmd = Command::cargo_bin("sunox").expect("binary");
-    cmd.env("HOME", &test_home)
+    with_isolated_home(&mut cmd, &test_home)
         .args(["config", "set", "output_dir", "./songs", "--json"])
         .assert()
         .success()
         .stdout(predicate::str::contains("\"output_dir\": \"./songs\""));
 
     let mut show = Command::cargo_bin("sunox").expect("binary");
-    show.env("HOME", &test_home)
+    with_isolated_home(&mut show, &test_home)
         .args(["config", "show", "--json"])
         .assert()
         .success()
@@ -473,15 +478,10 @@ fn config_show_applies_suno_env_overrides() {
 
 #[test]
 fn config_set_normalizes_default_model_version() {
-    let test_home = std::env::temp_dir().join(format!(
-        "sunox-cli-model-config-test-{}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&test_home);
-    std::fs::create_dir_all(&test_home).expect("test home");
+    let test_home = isolated_test_home("sunox-cli-model-config-test");
 
     let mut cmd = Command::cargo_bin("sunox").expect("binary");
-    cmd.env("HOME", &test_home)
+    with_isolated_home(&mut cmd, &test_home)
         .args(["config", "set", "default_model", "v5.5", "--json"])
         .assert()
         .success()
@@ -492,15 +492,10 @@ fn config_set_normalizes_default_model_version() {
 
 #[test]
 fn global_config_override_applies_without_persisting() {
-    let test_home = std::env::temp_dir().join(format!(
-        "sunox-cli-global-config-test-{}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&test_home);
-    std::fs::create_dir_all(&test_home).expect("test home");
+    let test_home = isolated_test_home("sunox-cli-global-config-test");
 
     let mut cmd = Command::cargo_bin("sunox").expect("binary");
-    cmd.env("HOME", &test_home)
+    with_isolated_home(&mut cmd, &test_home)
         .args(["-c", "default_model=v5", "config", "show", "--json"])
         .assert()
         .success()
@@ -509,7 +504,7 @@ fn global_config_override_applies_without_persisting() {
         ));
 
     let mut show = Command::cargo_bin("sunox").expect("binary");
-    show.env("HOME", &test_home)
+    with_isolated_home(&mut show, &test_home)
         .args(["config", "show", "--json"])
         .assert()
         .success()
@@ -520,15 +515,10 @@ fn global_config_override_applies_without_persisting() {
 
 #[test]
 fn config_check_json_reports_missing_auth_structurally() {
-    let test_home = std::env::temp_dir().join(format!(
-        "sunox-cli-config-check-test-{}",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_dir_all(&test_home);
-    std::fs::create_dir_all(&test_home).expect("test home");
+    let test_home = isolated_test_home("sunox-cli-config-check-test");
 
     let mut cmd = Command::cargo_bin("sunox").expect("binary");
-    cmd.env("HOME", &test_home)
+    with_isolated_home(&mut cmd, &test_home)
         .args(["config", "check", "--json"])
         .assert()
         .success()
