@@ -241,6 +241,27 @@ async fn requests_use_stored_browser_environment_headers_when_available() {
 }
 
 #[tokio::test]
+async fn challenge_recheck_refresh_skips_without_clerk_material() {
+    let client = SunoClient::new_for_tests(
+        "http://127.0.0.1:1".into(),
+        AuthState {
+            jwt: Some("test-jwt".into()),
+            device_id: Some("device-1".into()),
+            clerk_client_cookie: None,
+            ..AuthState::default()
+        },
+    )
+    .expect("test client");
+
+    assert!(
+        !client
+            .try_refresh_jwt_for_challenge_recheck()
+            .await
+            .expect("refresh recheck")
+    );
+}
+
+#[tokio::test]
 async fn restore_clips_posts_current_web_trash_contract() {
     let server = MockServer::json("{}").await;
     let client = server.client();

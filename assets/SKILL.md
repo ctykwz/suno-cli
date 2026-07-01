@@ -314,7 +314,7 @@ sunox clip download $ids --output ./archive/
 ## Notes
 
 - Auth refreshes automatically (~7-day session lifetime).
-- Commands that submit through `/api/generate/v2-web/` preflight `POST /api/c/check` with `ctype=generation`; when no challenge is required, submit uses `token=null` and `token_provider=null`.
+- Commands that submit through `/api/generate/v2-web/` preflight `POST /api/c/check` with `ctype=generation`; if Suno reports a challenge and stored Clerk refresh material exists, Sunox refreshes the JWT once and repeats the preflight before surfacing the challenge. When no challenge is required, submit uses `token=null` and `token_provider=null`.
 - If Suno requires a challenge, prefer `--token <solved>` when available; use `--captcha` only to force the built-in browser-backed solver.
 - Generation paths (normal, describe, voice persona, cover, extend, generation-backed stems) use `/api/generate/v2-web/`; create, cover, extend, and stems expose `--token`, `--captcha`, and `--no-captcha`. Remaster and speed use their current web edit/generation routes. `sunox clip stems` is not the same as Suno Web Pro Get Stems export. You usually only need the subcommands.
 - Persona list/detail/clips/create/set/processed-clip/publish/unpublish/love/unlove/toggle-love/delete/restore/purge are available through `sunox persona ...`.

@@ -39,6 +39,22 @@ impl SunoClient {
         Ok(())
     }
 
+    pub(crate) async fn try_refresh_jwt_for_challenge_recheck(&self) -> Result<bool, CliError> {
+        let (request_jwt, has_refresh_material) = {
+            let auth = self.auth.lock().expect("auth mutex poisoned");
+            (auth.jwt.clone(), auth.clerk_client_cookie.is_some())
+        };
+        if !has_refresh_material {
+            return Ok(false);
+        }
+
+        match self.refresh_jwt_after_auth_failure(request_jwt).await {
+            Ok(()) => Ok(true),
+            Err(CliError::AuthExpired) => Ok(false),
+            Err(error) => Err(error),
+        }
+    }
+
     fn current_jwt(&self) -> Option<String> {
         self.auth.lock().expect("auth mutex poisoned").jwt.clone()
     }

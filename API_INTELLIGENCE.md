@@ -311,10 +311,12 @@ upsample response `request_id`.
 `{"ctype":"generation"}` before submit. Rust CLI commands that submit through
 `/api/generate/v2-web/` mirror that preflight: if the response does not require
 a challenge, the submit body uses `token: null` and `token_provider: null`; if
-it requires a challenge, the CLI stops before submit unless the user supplied
-`--token` or explicitly opted into `--captcha`. When a solved token is present,
-the submit body carries `token_provider: 1`. The user-facing create, cover,
-extend, and stems commands expose these challenge controls.
+it requires a challenge and stored Clerk refresh material exists, the CLI
+refreshes the JWT once and repeats the preflight before surfacing the challenge.
+If the challenge is still required, the CLI stops before submit unless the user
+supplied `--token` or explicitly opted into `--captcha`. When a solved token is
+present, the submit body carries `token_provider: 1`. The user-facing create,
+cover, extend, and stems commands expose these challenge controls.
 
 **Two modes**:
 1. **Description mode** (`metadata.create_mode = "inspiration"`, `prompt` is the description) — Suno writes lyrics from description
@@ -966,7 +968,7 @@ processing is not.
 
 ## Key Insights for Rust CLI
 
-1. **Captcha/challenge is conditional** — `POST /api/c/check` with `{"ctype":"generation"}` decides whether generation needs a solved token. The CLI mirrors this preflight before `/api/generate/v2-web/` submits. Captured submits use `token_provider: 1` only when a solved `token` is present; normal authenticated submits use `token: null` and `token_provider: null`.
+1. **Captcha/challenge is conditional** — `POST /api/c/check` with `{"ctype":"generation"}` decides whether generation needs a solved token. The CLI mirrors this preflight before `/api/generate/v2-web/` submits. If the preflight reports a challenge and stored Clerk refresh material exists, the CLI refreshes the JWT once and repeats the preflight before surfacing the challenge. Captured submits use `token_provider: 1` only when a solved `token` is present; normal authenticated submits use `token: null` and `token_provider: null`.
 2. **Lyrics generation is free and easy** — no captcha needed, just JWT auth
 3. **JWT refresh** — need Clerk cookie exchange or session keepalive
 4. **Browser-token header** — dynamically generated from current timestamp, base64-encoded

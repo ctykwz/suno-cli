@@ -11,15 +11,12 @@ impl SunoClient {
     /// transparently via Clerk refresh.
     pub async fn generate(&self, req: &GenerateRequest) -> Result<Vec<Clip>, CliError> {
         if req.token.is_none() {
-            let challenge = self.generation_challenge().await?;
+            let mut challenge = self.generation_challenge().await?;
+            if challenge.required && self.try_refresh_jwt_for_challenge_recheck().await? {
+                challenge = self.generation_challenge().await?;
+            }
             if challenge.required {
-                let version = challenge
-                    .captcha_version
-                    .map(|version| version.to_string())
-                    .unwrap_or_else(|| "unknown".to_string());
-                return Err(CliError::Config(format!(
-                    "Suno requires a generation challenge (captcha_version={version}). Complete a manual generation challenge in the Suno web app and retry, provide a valid challenge token with --token <token>, or force the browser-backed solver with --captcha."
-                )));
+                return Err(generation_challenge_error(&challenge));
             }
         }
 
@@ -53,4 +50,14 @@ impl SunoClient {
         }
         Ok(all_clips)
     }
+}
+
+fn generation_challenge_error(challenge: &super::challenge::GenerationChallenge) -> CliError {
+    let version = challenge
+        .captcha_version
+        .map(|version| version.to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    CliError::Config(format!(
+        "Suno requires a generation challenge (captcha_version={version}). When stored Clerk refresh material is available, Sunox refreshes the JWT once and repeats the challenge preflight before showing this message. Complete a manual generation challenge in the Suno web app and retry, provide a valid challenge token with --token <token>, or force the browser-backed solver with --captcha."
+    ))
 }

@@ -97,7 +97,7 @@ pub async fn agent_info(_ctx: &AppContext) -> Result<(), CliError> {
         },
         "command_notes": {
             "create": {
-                "default_challenge": "preflights POST /api/c/check with ctype=generation; submits with token=null and token_provider=null only when no challenge is required; does not run the browser solver unless --captcha is supplied",
+                "default_challenge": "preflights POST /api/c/check with ctype=generation; if Suno reports a challenge and stored Clerk refresh material exists, refreshes the JWT once and repeats the preflight before surfacing the challenge; submits with token=null and token_provider=null only when no challenge is required; does not run the browser solver unless --captcha is supplied",
                 "challenge_flags": {
                     "--token": "use an externally supplied solved challenge token; submit body uses token_provider=1",
                     "--captcha": "force the browser-backed challenge solver; submit body uses token_provider=1 when a token is produced",
@@ -267,7 +267,7 @@ pub async fn agent_info(_ctx: &AppContext) -> Result<(), CliError> {
             ],
             "login_fallback": "`sunox login` first probes existing browser cookies; if that fails, it opens a dedicated Sunox Chrome/Edge-compatible browser profile and captures the Clerk session after the user logs in.",
             "logout": "`sunox logout` removes stored auth and the dedicated interactive browser profile",
-            "generation_challenge": "Commands that submit through /api/generate/v2-web/ preflight POST /api/c/check with ctype=generation. If no challenge is required, submit uses token=null/token_provider=null. Use --token <solved> to supply a token or --captcha to force the browser-backed solver; solved-token submits use token_provider=1.",
+            "generation_challenge": "Commands that submit through /api/generate/v2-web/ preflight POST /api/c/check with ctype=generation. If Suno reports a challenge and stored Clerk refresh material exists, Sunox refreshes the JWT once and repeats the preflight before surfacing the challenge. If no challenge is required, submit uses token=null/token_provider=null. Use --token <solved> to supply a token or --captcha to force the browser-backed solver; solved-token submits use token_provider=1.",
             "browser_environment": "Browser-cookie login records a stable source browser id and best-effort public profile settings such as accept-language, but does not fabricate user-agent from that label. Interactive login captures runtime user-agent and accept-language via CDP. API calls reuse available fields independently and fall back field-by-field when unavailable.",
         },
         "provider": "direct_suno_unofficial",
