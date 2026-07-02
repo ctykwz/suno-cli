@@ -42,6 +42,10 @@ pub struct CreateArgs {
     #[arg(long)]
     pub style_influence: Option<f64>,
 
+    /// Enhance style tags through Suno's web prompt upsample flow before submit.
+    #[arg(long)]
+    pub enhance_tags: bool,
+
     /// Generate instrumental only
     #[arg(long)]
     pub instrumental: bool,
@@ -101,6 +105,10 @@ pub struct GenerateArgs {
     #[arg(long)]
     pub style_influence: Option<f64>,
 
+    /// Enhance style tags through Suno's web prompt upsample flow before submit.
+    #[arg(long)]
+    pub enhance_tags: bool,
+
     /// Generate instrumental only (no vocals)
     #[arg(long)]
     pub instrumental: bool,
@@ -151,6 +159,10 @@ pub struct DescribeArgs {
     /// Style influence strength (0-100)
     #[arg(long)]
     pub style_influence: Option<f64>,
+
+    /// Enhance style tags through Suno's web prompt upsample flow before submit.
+    #[arg(long)]
+    pub enhance_tags: bool,
 
     /// Generate instrumental only
     #[arg(long)]

@@ -24,6 +24,27 @@ struct MockServer {
     requests: oneshot::Receiver<Vec<CapturedRequest>>,
 }
 
+fn billing_info_response(plan_id: &str) -> String {
+    serde_json::json!({
+        "credits": 0,
+        "total_credits_left": 0,
+        "monthly_usage": 0,
+        "monthly_limit": 0,
+        "is_active": true,
+        "plan": {
+            "id": plan_id,
+            "name": "Pro Plan",
+            "plan_key": "pro",
+            "usage_plan_features": []
+        },
+        "models": [],
+        "period": "month",
+        "renews_on": null,
+        "remaster_model_types": []
+    })
+    .to_string()
+}
+
 impl MockServer {
     async fn json(response_body: &str) -> Self {
         Self::json_sequence(&[response_body]).await
@@ -238,6 +259,30 @@ async fn requests_use_stored_browser_environment_headers_when_available() {
     let headers = request.headers.to_ascii_lowercase();
     assert!(headers.contains("user-agent: sunoxtestbrowser/1.0"));
     assert!(headers.contains("accept-language: en-us,en;q=0.9"));
+}
+
+#[tokio::test]
+async fn requests_use_browser_like_fallback_headers_when_environment_is_partial() {
+    let server = MockServer::json(r#"{"required":false}"#).await;
+    let client = server.client();
+
+    client
+        .generation_challenge()
+        .await
+        .expect("generation challenge");
+
+    let request = server.captured().await;
+    let headers = request.headers.to_ascii_lowercase();
+    assert!(headers.contains("user-agent: mozilla/5.0"));
+    assert!(headers.contains("accept: */*"));
+    assert!(headers.contains("accept-language: en"));
+    assert!(headers.contains("sec-ch-ua: \"google chrome\";v=\"149\""));
+    assert!(headers.contains("sec-ch-ua-mobile: ?0"));
+    assert!(headers.contains("sec-ch-ua-platform: "));
+    assert!(headers.contains("sec-fetch-mode: cors"));
+    assert!(headers.contains("sec-fetch-dest: empty"));
+    assert!(headers.contains("sec-fetch-site: same-site"));
+    assert!(headers.contains("priority: u=1, i"));
 }
 
 #[tokio::test]
@@ -459,9 +504,11 @@ async fn set_clip_visibility_posts_current_web_contract() {
 
 #[tokio::test]
 async fn generate_posts_current_web_contract() {
-    let server = MockServer::json(
+    let billing = billing_info_response("tier-pro");
+    let server = MockServer::json_sequence(&[
+        billing.as_str(),
         r#"{"clips":[{"id":"clip-1","title":"Demo","status":"submitted","model_name":"chirp-v4-5","created_at":"2026-06-30T00:00:00Z"}]}"#,
-    )
+    ])
     .await;
     let client = server.client();
 
@@ -476,10 +523,13 @@ async fn generate_posts_current_web_contract() {
 
     assert_eq!(clips.len(), 1);
     assert_eq!(clips[0].id, "clip-1");
-    let request = server.captured().await;
-    assert_eq!(request.method, "POST");
-    assert_eq!(request.path, "/api/generate/v2-web/");
-    let body = serde_json::from_str::<serde_json::Value>(&request.body).expect("request json");
+    let requests = server.captured_all().await;
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0].method, "GET");
+    assert_eq!(requests[0].path, "/api/billing/info/");
+    assert_eq!(requests[1].method, "POST");
+    assert_eq!(requests[1].path, "/api/generate/v2-web/");
+    let body = serde_json::from_str::<serde_json::Value>(&requests[1].body).expect("request json");
     assert_eq!(body["token"], "captcha-token");
     assert_eq!(body["generation_type"], "TEXT");
     assert_eq!(body["mv"], "chirp-v4-5");
@@ -489,6 +539,7 @@ async fn generate_posts_current_web_contract() {
     assert_eq!(body["metadata"]["create_mode"], "custom");
     assert_eq!(body["metadata"]["lyrics_model"], "default");
     assert_eq!(body["metadata"]["web_client_pathname"], "/create");
+    assert_eq!(body["metadata"]["user_tier"], "tier-pro");
     assert!(
         body["transaction_uuid"]
             .as_str()
@@ -499,6 +550,27 @@ async fn generate_posts_current_web_contract() {
             .as_str()
             .is_some_and(|id| !id.is_empty())
     );
+}
+
+#[tokio::test]
+async fn generate_preserves_existing_user_tier_without_billing_lookup() {
+    let server = MockServer::json(
+        r#"{"clips":[{"id":"clip-1","title":"Demo","status":"submitted","model_name":"chirp-v4-5","created_at":"2026-06-30T00:00:00Z"}]}"#,
+    )
+    .await;
+    let client = server.client();
+    let mut generate = GenerateRequest::new("chirp-v4-5", "custom");
+    generate.set_challenge_token(Some("captcha-token".into()));
+    generate.metadata.user_tier = "existing-tier".into();
+
+    let clips = client.generate(&generate).await.expect("generate");
+
+    assert_eq!(clips[0].id, "clip-1");
+    let request = server.captured().await;
+    assert_eq!(request.method, "POST");
+    assert_eq!(request.path, "/api/generate/v2-web/");
+    let body = serde_json::from_str::<serde_json::Value>(&request.body).expect("request json");
+    assert_eq!(body["metadata"]["user_tier"], "existing-tier");
 }
 
 #[tokio::test]
@@ -523,9 +595,37 @@ async fn generation_challenge_posts_current_web_contract() {
 }
 
 #[tokio::test]
+async fn prompt_upsample_posts_current_web_contract() {
+    let server =
+        MockServer::json(r#"{"upsampled":"garage pop, dry drums","request_id":"request-1"}"#).await;
+    let client = server.client();
+
+    let response = client
+        .upsample_tags("garage pop", false)
+        .await
+        .expect("upsample tags");
+
+    assert_eq!(response.upsampled, "garage pop, dry drums");
+    assert_eq!(response.request_id, "request-1");
+    let request = server.captured().await;
+    assert_eq!(request.method, "POST");
+    assert_eq!(request.path, "/api/prompts/upsample");
+    let body = serde_json::from_str::<serde_json::Value>(&request.body).expect("request json");
+    assert_eq!(
+        body,
+        serde_json::json!({
+            "original_tags": "garage pop",
+            "is_instrumental": false
+        })
+    );
+}
+
+#[tokio::test]
 async fn generate_without_token_preflights_then_submits_when_challenge_is_not_required() {
+    let billing = billing_info_response("tier-pro");
     let server = MockServer::json_sequence(&[
         r#"{"required":false}"#,
+        billing.as_str(),
         r#"{"clips":[{"id":"clip-1","title":"Demo","status":"submitted","model_name":"chirp-fenix","created_at":"2026-06-30T00:00:00Z"}]}"#,
     ])
     .await;
@@ -536,15 +636,45 @@ async fn generate_without_token_preflights_then_submits_when_challenge_is_not_re
 
     assert_eq!(clips[0].id, "clip-1");
     let requests = server.captured_all().await;
-    assert_eq!(requests.len(), 2);
+    assert_eq!(requests.len(), 3);
     assert_eq!(requests[0].method, "POST");
     assert_eq!(requests[0].path, "/api/c/check");
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&requests[0].body).expect("request json"),
         serde_json::json!({ "ctype": "generation" })
     );
-    assert_eq!(requests[1].method, "POST");
-    assert_eq!(requests[1].path, "/api/generate/v2-web/");
+    assert_eq!(requests[1].method, "GET");
+    assert_eq!(requests[1].path, "/api/billing/info/");
+    assert_eq!(requests[2].method, "POST");
+    assert_eq!(requests[2].path, "/api/generate/v2-web/");
+    let body = serde_json::from_str::<serde_json::Value>(&requests[2].body).expect("request json");
+    assert_eq!(body["metadata"]["user_tier"], "tier-pro");
+}
+
+#[tokio::test]
+async fn generate_falls_back_when_billing_info_is_unavailable() {
+    let server = MockServer::json_status_sequence(&[
+        (200, r#"{"required":false}"#),
+        (500, r#"{"detail":"billing unavailable"}"#),
+        (
+            200,
+            r#"{"clips":[{"id":"clip-1","title":"Demo","status":"submitted","model_name":"chirp-fenix","created_at":"2026-06-30T00:00:00Z"}]}"#,
+        ),
+    ])
+    .await;
+    let client = server.client();
+    let generate = GenerateRequest::new("chirp-fenix", "custom");
+
+    let clips = client.generate(&generate).await.expect("generate");
+
+    assert_eq!(clips[0].id, "clip-1");
+    let requests = server.captured_all().await;
+    assert_eq!(requests.len(), 3);
+    assert_eq!(requests[0].path, "/api/c/check");
+    assert_eq!(requests[1].path, "/api/billing/info/");
+    assert_eq!(requests[2].path, "/api/generate/v2-web/");
+    let body = serde_json::from_str::<serde_json::Value>(&requests[2].body).expect("request json");
+    assert_eq!(body["metadata"]["user_tier"], "");
 }
 
 #[tokio::test]
@@ -566,8 +696,10 @@ async fn generate_without_token_stops_when_challenge_is_required() {
 
 #[tokio::test]
 async fn cover_posts_generate_v2_cover_contract() {
+    let billing = billing_info_response("tier-pro");
     let server = MockServer::json_sequence(&[
         r#"{"required":false}"#,
+        billing.as_str(),
         r#"{"clips":[{"id":"cover-1","title":"Cover","status":"submitted","model_name":"chirp-fenix","created_at":"2026-06-30T00:00:00Z"}]}"#,
     ])
     .await;
@@ -580,23 +712,28 @@ async fn cover_posts_generate_v2_cover_contract() {
 
     assert_eq!(clips[0].id, "cover-1");
     let requests = server.captured_all().await;
-    assert_eq!(requests.len(), 2);
+    assert_eq!(requests.len(), 3);
     assert_eq!(requests[0].method, "POST");
     assert_eq!(requests[0].path, "/api/c/check");
-    assert_eq!(requests[1].method, "POST");
-    assert_eq!(requests[1].path, "/api/generate/v2-web/");
-    let body = serde_json::from_str::<serde_json::Value>(&requests[1].body).expect("request json");
+    assert_eq!(requests[1].method, "GET");
+    assert_eq!(requests[1].path, "/api/billing/info/");
+    assert_eq!(requests[2].method, "POST");
+    assert_eq!(requests[2].path, "/api/generate/v2-web/");
+    let body = serde_json::from_str::<serde_json::Value>(&requests[2].body).expect("request json");
     assert_eq!(body["mv"], "chirp-fenix");
     assert_eq!(body["tags"], "pop");
     assert_eq!(body["cover_clip_id"], "clip-a");
     assert_eq!(body["metadata"]["create_mode"], "cover");
+    assert_eq!(body["metadata"]["user_tier"], "tier-pro");
 }
 
 #[tokio::test]
 async fn cover_with_challenge_token_posts_generate_without_preflight_contract() {
-    let server = MockServer::json(
+    let billing = billing_info_response("tier-pro");
+    let server = MockServer::json_sequence(&[
+        billing.as_str(),
         r#"{"clips":[{"id":"cover-1","title":"Cover","status":"submitted","model_name":"chirp-fenix","created_at":"2026-06-30T00:00:00Z"}]}"#,
-    )
+    ])
     .await;
     let client = server.client();
 
@@ -611,11 +748,15 @@ async fn cover_with_challenge_token_posts_generate_without_preflight_contract() 
         .expect("cover");
 
     assert_eq!(clips[0].id, "cover-1");
-    let request = server.captured().await;
-    assert_eq!(request.method, "POST");
-    assert_eq!(request.path, "/api/generate/v2-web/");
-    let body = serde_json::from_str::<serde_json::Value>(&request.body).expect("request json");
+    let requests = server.captured_all().await;
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0].method, "GET");
+    assert_eq!(requests[0].path, "/api/billing/info/");
+    assert_eq!(requests[1].method, "POST");
+    assert_eq!(requests[1].path, "/api/generate/v2-web/");
+    let body = serde_json::from_str::<serde_json::Value>(&requests[1].body).expect("request json");
     assert_eq!(body["cover_clip_id"], "clip-a");
+    assert_eq!(body["metadata"]["user_tier"], "tier-pro");
     assert_eq!(body["token"], "captcha-token");
     assert_eq!(body["token_provider"], 1);
 }
@@ -697,9 +838,11 @@ async fn speed_adjust_posts_current_web_contract() {
 
 #[tokio::test]
 async fn stems_posts_current_web_contract() {
+    let billing = billing_info_response("tier-pro");
     let server = MockServer::json_sequence(&[
         r#"[{"id":"clip-a","title":"Source Song","status":"complete","model_name":"chirp-fenix","created_at":"2026-06-30T00:00:00Z"}]"#,
         r#"{"required":false}"#,
+        billing.as_str(),
         r#"{"clips":[{"id":"stem-1","title":"Source Song (Vocals)","status":"submitted","model_name":"chirp-stem","created_at":"2026-06-30T00:00:00Z"},{"id":"stem-2","title":"Source Song (Drums)","status":"submitted","model_name":"chirp-stem","created_at":"2026-06-30T00:00:00Z"}]}"#,
     ])
     .await;
@@ -710,14 +853,16 @@ async fn stems_posts_current_web_contract() {
     assert_eq!(clips.len(), 2);
     assert_eq!(clips[0].id, "stem-1");
     let requests = server.captured_all().await;
-    assert_eq!(requests.len(), 3);
+    assert_eq!(requests.len(), 4);
     assert_eq!(requests[0].method, "GET");
     assert_eq!(requests[0].path, "/api/feed/?ids=clip-a");
     assert_eq!(requests[1].method, "POST");
     assert_eq!(requests[1].path, "/api/c/check");
-    assert_eq!(requests[2].method, "POST");
-    assert_eq!(requests[2].path, "/api/generate/v2-web/");
-    let body = serde_json::from_str::<serde_json::Value>(&requests[2].body).expect("request json");
+    assert_eq!(requests[2].method, "GET");
+    assert_eq!(requests[2].path, "/api/billing/info/");
+    assert_eq!(requests[3].method, "POST");
+    assert_eq!(requests[3].path, "/api/generate/v2-web/");
+    let body = serde_json::from_str::<serde_json::Value>(&requests[3].body).expect("request json");
     assert_eq!(body["token"], serde_json::Value::Null);
     assert_eq!(body["token_provider"], serde_json::Value::Null);
     assert_eq!(body["task"], "gen_stem");
@@ -731,12 +876,27 @@ async fn stems_posts_current_web_contract() {
     assert_eq!(body["stem_task"], "twelve");
     assert_eq!(body["metadata"]["create_mode"], "custom");
     assert_eq!(body["metadata"]["is_remix"], true);
+    assert_eq!(body["metadata"]["user_tier"], "tier-pro");
+    assert!(
+        !body["metadata"]
+            .as_object()
+            .expect("metadata object")
+            .contains_key("is_max_mode")
+    );
+    assert!(
+        !body["metadata"]
+            .as_object()
+            .expect("metadata object")
+            .contains_key("is_mumble")
+    );
 }
 
 #[tokio::test]
 async fn stems_with_challenge_token_posts_generate_without_preflight_contract() {
+    let billing = billing_info_response("tier-pro");
     let server = MockServer::json_sequence(&[
         r#"[{"id":"clip-a","title":"Source Song","status":"complete","model_name":"chirp-fenix","created_at":"2026-06-30T00:00:00Z"}]"#,
+        billing.as_str(),
         r#"{"clips":[{"id":"stem-1","title":"Source Song (Vocals)","status":"submitted","model_name":"chirp-stem","created_at":"2026-06-30T00:00:00Z"}]}"#,
     ])
     .await;
@@ -749,13 +909,16 @@ async fn stems_with_challenge_token_posts_generate_without_preflight_contract() 
 
     assert_eq!(clips[0].id, "stem-1");
     let requests = server.captured_all().await;
-    assert_eq!(requests.len(), 2);
+    assert_eq!(requests.len(), 3);
     assert_eq!(requests[0].method, "GET");
     assert_eq!(requests[0].path, "/api/feed/?ids=clip-a");
-    assert_eq!(requests[1].method, "POST");
-    assert_eq!(requests[1].path, "/api/generate/v2-web/");
-    let body = serde_json::from_str::<serde_json::Value>(&requests[1].body).expect("request json");
+    assert_eq!(requests[1].method, "GET");
+    assert_eq!(requests[1].path, "/api/billing/info/");
+    assert_eq!(requests[2].method, "POST");
+    assert_eq!(requests[2].path, "/api/generate/v2-web/");
+    let body = serde_json::from_str::<serde_json::Value>(&requests[2].body).expect("request json");
     assert_eq!(body["task"], "gen_stem");
+    assert_eq!(body["metadata"]["user_tier"], "tier-pro");
     assert_eq!(body["token"], "captcha-token");
     assert_eq!(body["token_provider"], 1);
 }

@@ -53,6 +53,7 @@ async fn dispatch_command(
                     vocal: None,
                     weirdness: None,
                     style_influence: None,
+                    enhance_tags: false,
                     instrumental: false,
                     token: None,
                     captcha: false,

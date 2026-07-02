@@ -104,6 +104,9 @@ pub async fn agent_info(_ctx: &AppContext) -> Result<(), CliError> {
                     "--no-captcha": "do not force the browser-backed solver; generation challenge preflight still runs"
                 },
                 "modes": "description mode when a non-instrumental prompt is provided; custom lyrics mode when --lyrics or --lyrics-file is provided; custom instrumental mode when --instrumental is provided, with the prompt folded into style tags",
+                "web_context": "generation metadata.user_tier is filled from current account /api/billing/info/ plan.id when available, with an empty fallback if that read is unavailable",
+                "enhance_tags": "pass --enhance-tags only when the user wants Suno to enhance style tags; it first calls /api/prompts/upsample and carries the returned tags plus request_id into metadata.last_tags_generation; personalization_enabled follows the captured web submit shape",
+                "response_derived_metadata": "do not fabricate tag-upsample metadata; metadata.last_tags_generation is only valid after a real /api/prompts/upsample response and should otherwise be omitted",
                 "title": "optional; omitted title is sent as an empty string for description mode because Suno currently requires params.title to be a string"
             },
             "clip upload": {
@@ -146,7 +149,7 @@ pub async fn agent_info(_ctx: &AppContext) -> Result<(), CliError> {
             }
         },
         "features": [
-            "tags", "negative_tags", "vocal_gender",
+            "tags", "enhance_tags", "negative_tags", "vocal_gender",
             "weirdness", "style_influence",
             "instrumental", "extend", "concat", "cover", "remaster",
             "stems", "clip_speed", "lyrics", "timed_lyrics", "set_metadata",
@@ -268,7 +271,7 @@ pub async fn agent_info(_ctx: &AppContext) -> Result<(), CliError> {
             "login_fallback": "`sunox login` first probes existing browser cookies; if that fails, it opens a dedicated Sunox Chrome/Edge-compatible browser profile and captures the Clerk session after the user logs in.",
             "logout": "`sunox logout` removes stored auth and the dedicated interactive browser profile",
             "generation_challenge": "Commands that submit through /api/generate/v2-web/ preflight POST /api/c/check with ctype=generation. If Suno reports a challenge and stored Clerk refresh material exists, Sunox refreshes the JWT once and repeats the preflight before surfacing the challenge. If no challenge is required, submit uses token=null/token_provider=null. Use --token <solved> to supply a token or --captcha to force the browser-backed solver; solved-token submits use token_provider=1.",
-            "browser_environment": "Browser-cookie login records a stable source browser id and best-effort public profile settings such as accept-language, but does not fabricate user-agent from that label. Interactive login captures runtime user-agent and accept-language via CDP. API calls reuse available fields independently and fall back field-by-field when unavailable.",
+            "browser_environment": "Browser-cookie login records a stable source browser id and best-effort public profile settings such as accept-language, but does not fabricate user-agent from that label. Interactive login captures runtime user-agent and accept-language via CDP. API calls reuse available fields independently, derive Chromium client hints from the selected user-agent, send stable browser fetch metadata headers, and fall back field-by-field when unavailable.",
         },
         "provider": "direct_suno_unofficial",
         "auth_required": true,

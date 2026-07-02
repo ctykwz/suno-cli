@@ -17,6 +17,8 @@ pub struct BillingInfo {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Plan {
+    #[serde(default)]
+    pub id: Option<String>,
     pub name: String,
     pub plan_key: String,
     #[serde(default)]

@@ -25,6 +25,7 @@ impl SunoClient {
         req.stem_type_id = Some(91);
         req.stem_type_group_name = Some("Twelve".into());
         req.stem_task = Some("twelve".into());
+        req.metadata.omit_create_form_flags();
         req.metadata.is_remix = Some(true);
         req.set_challenge_token(challenge_token);
 

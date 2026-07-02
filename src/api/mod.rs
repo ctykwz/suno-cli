@@ -11,6 +11,7 @@ pub mod lyrics;
 pub mod metadata;
 pub mod persona;
 pub mod playlist;
+pub mod prompts;
 pub mod remaster;
 pub mod speed;
 pub mod stems;

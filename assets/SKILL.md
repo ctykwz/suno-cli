@@ -238,6 +238,7 @@ sunox config set output_dir ./songs
 | `--persona` | Voice persona UUID | from Suno voice creation |
 | `--weirdness` | How experimental | 0–100 |
 | `--style-influence` | How strictly to follow tags | 0–100 |
+| `--enhance-tags` | Call Suno's tag upsample flow before submit | explicit opt-in |
 | `--instrumental` | No vocals | flag |
 | `--token` | Externally supplied challenge token | only when Suno challenges the request |
 | `--captcha` | Force browser-backed challenge solver | optional; not the default |
@@ -314,6 +315,18 @@ sunox clip download $ids --output ./archive/
 ## Notes
 
 - Auth refreshes automatically (~7-day session lifetime).
+- Browser-derived request context is real-value first: `sunox login` reuses captured
+  or profile-derived fields independently, derives Chromium client hints from the
+  selected user-agent, sends stable browser fetch metadata headers, and falls
+  back per field when a real value is unavailable.
+- Generation metadata fills `user_tier` from the current account's
+  `/api/billing/info/` `plan.id` when available, and falls back to an empty
+  value when that read is unavailable.
+- Do not fabricate tag-upsample metadata. In captured web flows,
+  `metadata.last_tags_generation` is only present after a real
+  `/api/prompts/upsample` response; use `--enhance-tags` when the user asks for
+  Suno to enhance tags, otherwise omit it. Its tags/request_id come from the
+  response; `personalization_enabled` follows the captured submit shape.
 - Commands that submit through `/api/generate/v2-web/` preflight `POST /api/c/check` with `ctype=generation`; if Suno reports a challenge and stored Clerk refresh material exists, Sunox refreshes the JWT once and repeats the preflight before surfacing the challenge. When no challenge is required, submit uses `token=null` and `token_provider=null`.
 - If Suno requires a challenge, prefer `--token <solved>` when available; use `--captcha` only to force the built-in browser-backed solver.
 - Generation paths (normal, describe, voice persona, cover, extend, generation-backed stems) use `/api/generate/v2-web/`; create, cover, extend, and stems expose `--token`, `--captcha`, and `--no-captcha`. Remaster and speed use their current web edit/generation routes. `sunox clip stems` is not the same as Suno Web Pro Get Stems export. You usually only need the subcommands.

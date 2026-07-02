@@ -1,10 +1,12 @@
 use serde::{Deserialize, Serialize};
 
 use super::clip::Clip;
+use super::prompts::PromptUpsampleResponse;
 
 const WEB_CLIENT_PATHNAME: &str = "/create";
 const GENERATION_TYPE_TEXT: &str = "TEXT";
 const CHALLENGE_TOKEN_PROVIDER: u8 = 1;
+const TAG_UPSAMPLE_PERSONALIZATION_ENABLED: bool = true;
 
 /// Shared browser-facing generation fields that are common across create,
 /// cover, extend, stems, and other `/api/generate/v2-web/` submits.
@@ -117,8 +119,10 @@ impl GenerateRequest {
 #[derive(Debug, Serialize)]
 pub struct GenerateMetadata {
     pub web_client_pathname: String,
-    pub is_max_mode: bool,
-    pub is_mumble: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_max_mode: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_mumble: Option<bool>,
     pub create_mode: String,
     pub user_tier: String,
     /// Random UUID generated per request.
@@ -130,14 +134,16 @@ pub struct GenerateMetadata {
     pub lyrics_model: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_remix: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_tags_generation: Option<LastTagsGeneration>,
 }
 
 impl GenerateMetadata {
     fn new_with_context(create_mode: &str, context: &GenerationWebContext) -> Self {
         Self {
             web_client_pathname: WEB_CLIENT_PATHNAME.to_string(),
-            is_max_mode: false,
-            is_mumble: false,
+            is_max_mode: Some(false),
+            is_mumble: Some(false),
             create_mode: create_mode.to_string(),
             user_tier: context.user_tier_value(),
             create_session_token: uuid::Uuid::new_v4().to_string(),
@@ -145,6 +151,33 @@ impl GenerateMetadata {
             control_sliders: None,
             lyrics_model: None,
             is_remix: None,
+            last_tags_generation: None,
+        }
+    }
+
+    pub fn omit_create_form_flags(&mut self) {
+        self.is_max_mode = None;
+        self.is_mumble = None;
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct LastTagsGeneration {
+    pub tags: String,
+    pub request_id: String,
+    pub original_tags: String,
+    pub personalization_enabled: bool,
+}
+
+impl LastTagsGeneration {
+    pub fn from_upsample_response(original_tags: String, response: PromptUpsampleResponse) -> Self {
+        Self {
+            tags: response.upsampled,
+            request_id: response.request_id,
+            original_tags,
+            // Captured web submits set this field to true when carrying
+            // tag-upsample metadata; it is not returned by /api/prompts/upsample.
+            personalization_enabled: TAG_UPSAMPLE_PERSONALIZATION_ENABLED,
         }
     }
 }
@@ -183,6 +216,37 @@ mod tests {
         assert_eq!(body["metadata"]["user_tier"], "tier-pro");
         assert!(body["metadata"]["create_session_token"].as_str().is_some());
         assert!(body["transaction_uuid"].as_str().is_some());
+    }
+
+    #[test]
+    fn generation_metadata_can_carry_real_tag_upsample_response() {
+        let mut request = GenerateRequest::new("chirp-fenix", "custom");
+        request.tags = Some("garage pop, dry drums".into());
+        request.metadata.last_tags_generation = Some(LastTagsGeneration {
+            tags: "garage pop, dry drums".into(),
+            request_id: "request-1".into(),
+            original_tags: "garage pop".into(),
+            personalization_enabled: true,
+        });
+
+        let body = serde_json::to_value(request).expect("request json");
+
+        assert_eq!(
+            body["metadata"]["last_tags_generation"]["tags"],
+            body["tags"]
+        );
+        assert_eq!(
+            body["metadata"]["last_tags_generation"]["request_id"],
+            "request-1"
+        );
+        assert_eq!(
+            body["metadata"]["last_tags_generation"]["original_tags"],
+            "garage pop"
+        );
+        assert_eq!(
+            body["metadata"]["last_tags_generation"]["personalization_enabled"],
+            true
+        );
     }
 
     #[test]

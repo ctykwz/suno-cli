@@ -1,4 +1,5 @@
-use crate::api::types::GenerateRequest;
+use crate::api::SunoClient;
+use crate::api::types::{GenerateRequest, LastTagsGeneration};
 use crate::app::AppContext;
 use crate::cli::{CreateArgs, DescribeArgs, ExtendArgs, GenerateArgs, ModelVersion};
 use crate::core::{AppConfig, CliError};
@@ -26,6 +27,7 @@ fn build_describe_args_from_create(args: CreateArgs) -> Result<DescribeArgs, Cli
         vocal: args.vocal,
         weirdness: args.weirdness,
         style_influence: args.style_influence,
+        enhance_tags: args.enhance_tags,
         instrumental: args.instrumental,
         token: args.token,
         captcha: args.captcha,
@@ -55,6 +57,7 @@ fn build_generate_args_from_create(args: CreateArgs) -> GenerateArgs {
         vocal: if args.instrumental { None } else { args.vocal },
         weirdness: args.weirdness,
         style_influence: args.style_influence,
+        enhance_tags: args.enhance_tags,
         instrumental: args.instrumental,
         token: args.token,
         captcha: args.captcha,
@@ -99,6 +102,7 @@ async fn generate(args: GenerateArgs, ctx: &AppContext) -> Result<(), CliError> 
     req.set_challenge_token(generation_token(args.token.clone(), force_captcha, ctx).await?);
     let _mutation_guard = ctx.acquire_mutation_lock()?;
     let client = ctx.client().await?;
+    maybe_enhance_tags(&mut req, args.enhance_tags, args.instrumental, &client).await?;
 
     if !ctx.quiet {
         let persona_note = if args.persona.is_some() {
@@ -153,6 +157,7 @@ async fn describe(args: DescribeArgs, ctx: &AppContext) -> Result<(), CliError> 
     req.set_challenge_token(generation_token(args.token.clone(), force_captcha, ctx).await?);
     let _mutation_guard = ctx.acquire_mutation_lock()?;
     let client = ctx.client().await?;
+    maybe_enhance_tags(&mut req, args.enhance_tags, args.instrumental, &client).await?;
 
     if !ctx.quiet {
         eprintln!(
@@ -177,6 +182,28 @@ fn build_describe_request(args: &DescribeArgs, config: &AppConfig) -> GenerateRe
     req.persona_id = args.persona.clone();
     req.metadata.control_sliders = control_sliders;
     req
+}
+
+async fn maybe_enhance_tags(
+    req: &mut GenerateRequest,
+    enabled: bool,
+    is_instrumental: bool,
+    client: &SunoClient,
+) -> Result<(), CliError> {
+    if !enabled {
+        return Ok(());
+    }
+
+    let original_tags = req.tags.clone().unwrap_or_default();
+    let upsample = client
+        .upsample_tags(&original_tags, is_instrumental)
+        .await?;
+    req.tags = Some(upsample.upsampled.clone());
+    req.metadata.last_tags_generation = Some(LastTagsGeneration::from_upsample_response(
+        original_tags,
+        upsample,
+    ));
+    Ok(())
 }
 
 fn model_api_key<'a>(model: Option<&'a ModelVersion>, config: &'a AppConfig) -> &'a str {
@@ -233,6 +260,7 @@ mod tests {
             vocal: None,
             weirdness: None,
             style_influence: None,
+            enhance_tags: false,
             instrumental: false,
             token: None,
             captcha: false,
@@ -288,6 +316,7 @@ mod tests {
             vocal: None,
             weirdness: None,
             style_influence: None,
+            enhance_tags: true,
             instrumental: false,
             token: Some("captcha-token".into()),
             captcha: true,
@@ -300,6 +329,7 @@ mod tests {
         assert_eq!(describe_args.token.as_deref(), Some("captcha-token"));
         assert!(describe_args.captcha);
         assert!(!describe_args.no_captcha);
+        assert!(describe_args.enhance_tags);
     }
 
     #[test]
@@ -314,6 +344,7 @@ mod tests {
             vocal: None,
             weirdness: None,
             style_influence: None,
+            enhance_tags: false,
             instrumental: false,
             token: None,
             captcha: false,
@@ -349,6 +380,7 @@ mod tests {
             vocal: None,
             weirdness: None,
             style_influence: None,
+            enhance_tags: false,
             instrumental: true,
             token: None,
             captcha: false,
@@ -388,6 +420,7 @@ mod tests {
             vocal: Some(crate::cli::VocalGender::Female),
             weirdness: Some(40.0),
             style_influence: Some(68.0),
+            enhance_tags: true,
             instrumental: true,
             token: None,
             captcha: false,
@@ -397,6 +430,7 @@ mod tests {
         let config = AppConfig::default();
 
         let generate_args = build_generate_args_from_create(args);
+        assert!(generate_args.enhance_tags);
         let req = build_generate_request(&generate_args, &config).expect("request");
 
         let body = serde_json::to_value(req).expect("request json");

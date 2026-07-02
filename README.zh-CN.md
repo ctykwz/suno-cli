@@ -193,7 +193,7 @@ sunox update
 sunox login
 ```
 
-`sunox login` 会先从 Chrome、Arc、Brave、Firefox 或 Edge 读取 Clerk cookie；如果读取失败，会自动打开一个 Sunox 专用且兼容 Chrome/Edge 的浏览器 profile，等你在里面登录 Suno 后捕获 Clerk session。随后它会换取 JWT，保存可刷新的本地 session，并在 JWT 过期时自动刷新。
+`sunox login` 会先从 Chrome、Arc、Brave、Firefox 或 Edge 读取 Clerk cookie；如果读取成功，会记录浏览器来源和可读取的公开 profile 设置，例如接受语言，但不会仅凭浏览器标签伪造 user-agent。如果读取失败，会自动打开一个 Sunox 专用且兼容 Chrome/Edge 的浏览器 profile，等你在里面登录 Suno 后捕获 Clerk session。随后它会换取 JWT，保存可刷新的本地 session，并在 JWT 过期时自动刷新。交互式登录能捕获 user-agent 和接受语言；后续 API 请求会基于选中的 user-agent 派生 Chromium client hints，发送浏览器 fetch metadata header，拿不到真实值时按字段降级。
 
 认证方式：
 
@@ -210,6 +210,7 @@ sunox login
 |---|---|---|
 | `--title` | 歌曲标题 | 最多 100 字符 |
 | `--tags` | 风格方向 | 例如 `"pop, synths, upbeat"` |
+| `--enhance-tags` | 提交前用 Suno Web 的 tag upsample 增强风格标签 | 显式开启 |
 | `--exclude` | 排除风格 | 例如 `"metal, heavy, dark"` |
 | `--lyrics` / `--lyrics-file` | 自定义歌词 | 支持 `[Verse]` 等段落标签 |
 | `--prompt` | 描述模式 prompt | 最多 500 字符 |
@@ -338,7 +339,7 @@ sunox install-skill --target cursor
 
 ## 实现说明
 
-生成、描述、persona、cover、extend 等路径复用 Suno Web 的 `/api/generate/v2-web/`。2026-06-30 的 HAR 已重新捕获 custom create body：自定义歌词放在 `gpt_description_prompt`，`prompt` 保持为空；带 challenge token 时同时发送 `token_provider: 1`。纯音乐 create 也走 custom mode；`sunox create --instrumental <prompt>` 会把 prompt 合并进 style tags，提交时 `prompt` 字段仍保持为空，这与 `15suno-labs-nostudio-20260630.har` 中重新捕获的 Web 请求一致。`task: "playlist_condition"` 也已捕获，但它属于 inspiration 生成变体，歌词放在 `prompt`，不能套用普通 custom create 规则。remaster 使用已捕获的 `/api/generate/upsample`，speed adjust 使用 `/api/clips/adjust-speed/`。默认提交不携带 challenge token；如果 Suno 报 required 且本地有 Clerk refresh material，Sunox 会先刷新一次 JWT 并重新 preflight，仍然 required 时才提示使用 `--token <solved>` 或显式 `--captcha`。cover 生成和 concat 编辑的 body 仍需要新的 live mutation capture。playlist mutation 已基于 bundle/live evidence 和 endpoint contract tests 实现；playlist remove 因大批量 remove 线上可能返回 Suno 500，故按 clip 单个请求提交。
+生成、描述、persona、cover、extend 等路径复用 Suno Web 的 `/api/generate/v2-web/`。2026-06-30 的 HAR 已重新捕获 custom create body：自定义歌词放在 `gpt_description_prompt`，`prompt` 保持为空；带 challenge token 时同时发送 `token_provider: 1`。Sunox 会优先从当前账号 `/api/billing/info/` 的 `plan.id` 填充 `metadata.user_tier`，拿不到时降级为空值。使用 `--enhance-tags` 时，Sunox 会先调用 `/api/prompts/upsample`，再把返回的 tags 和 `request_id` 写入 `metadata.last_tags_generation`；其中 `personalization_enabled` 按已捕获的 Web submit 形状发送。不使用该参数时不会发送 `metadata.last_tags_generation`。纯音乐 create 也走 custom mode；`sunox create --instrumental <prompt>` 会把 prompt 合并进 style tags，提交时 `prompt` 字段仍保持为空，这与 `15suno-labs-nostudio-20260630.har` 中重新捕获的 Web 请求一致。`task: "playlist_condition"` 也已捕获，但它属于 inspiration 生成变体，歌词放在 `prompt`，不能套用普通 custom create 规则。remaster 使用已捕获的 `/api/generate/upsample`，speed adjust 使用 `/api/clips/adjust-speed/`。默认提交不携带 challenge token；如果 Suno 报 required 且本地有 Clerk refresh material，Sunox 会先刷新一次 JWT 并重新 preflight，仍然 required 时才提示使用 `--token <solved>` 或显式 `--captcha`。cover 生成和 concat 编辑的 body 仍需要新的 live mutation capture。playlist mutation 已基于 bundle/live evidence 和 endpoint contract tests 实现；playlist remove 因大批量 remove 线上可能返回 Suno 500，故按 clip 单个请求提交。
 
 ## 贡献
 

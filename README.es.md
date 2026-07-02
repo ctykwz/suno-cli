@@ -193,7 +193,7 @@ sunox update
 sunox login
 ```
 
-`sunox login` primero intenta leer la cookie Clerk desde Chrome, Arc, Brave, Firefox o Edge. Si esa extracción falla, abre un perfil de navegador dedicado de Sunox y compatible con Chrome/Edge, y espera a que inicies sesión en Suno allí. La sesión Clerk capturada se intercambia por un JWT y se guarda localmente para futuros refrescos.
+`sunox login` primero intenta leer la cookie Clerk desde Chrome, Arc, Brave, Firefox o Edge. Si esa extracción funciona, Sunox guarda la fuente del navegador y los ajustes públicos disponibles, como los idiomas aceptados, pero no fabrica un user-agent solo a partir de la etiqueta del navegador. Si esa extracción falla, abre un perfil de navegador dedicado de Sunox y compatible con Chrome/Edge, y espera a que inicies sesión en Suno allí. La sesión Clerk capturada se intercambia por un JWT y se guarda localmente para futuros refrescos. El login interactivo también captura user-agent e idiomas aceptados; las peticiones API derivan los client hints de Chromium desde el user-agent seleccionado, envían los headers de fetch metadata del navegador y hacen fallback campo por campo cuando no hay valores reales.
 
 Métodos de autenticación:
 
@@ -210,6 +210,7 @@ Métodos de autenticación:
 |---|---|---|
 | `--title` | Título de la canción | hasta 100 caracteres |
 | `--tags` | Dirección de estilo | por ejemplo `"pop, synths, upbeat"` |
+| `--enhance-tags` | Mejorar los tags con el flujo tag upsample de Suno Web antes de enviar | opt-in explícito |
 | `--exclude` | Estilos a evitar | por ejemplo `"metal, heavy, dark"` |
 | `--lyrics` / `--lyrics-file` | Letras personalizadas | soporta secciones como `[Verse]` |
 | `--prompt` | Prompt del modo descripción | hasta 500 caracteres |
@@ -338,7 +339,7 @@ sunox install-skill --target cursor
 
 ## Notas de implementación
 
-Los flujos generate, describe, persona, cover y extend reutilizan `/api/generate/v2-web/` de Suno Web. El body custom create fue recapturado el 30 de junio de 2026: las letras personalizadas se envían en `gpt_description_prompt`, mientras `prompt` queda vacío; con un challenge token resuelto también se envía `token_provider: 1`. Instrumental create también usa custom mode: con `sunox create --instrumental <prompt>`, el prompt se integra en los style tags y el campo `prompt` enviado queda vacío, igual que en la petición Web recapturada en `15suno-labs-nostudio-20260630.har`. `task: "playlist_condition"` también fue capturado, pero pertenece a un flujo inspiration separado que pone letras en `prompt`, por lo que no debe reutilizar las reglas del custom create estándar. Remaster usa `/api/generate/upsample`, y speed adjust usa `/api/clips/adjust-speed/`. Por defecto, `sunox` no envía challenge token; si Suno devuelve required y hay material Clerk para refrescar, Sunox refresca el JWT una vez y repite el preflight antes de pedir `--token <solved>` o un `--captcha` explícito. Los bodies de cover generation y concat edit todavía necesitan una captura live nueva. Las mutaciones de playlists están implementadas con evidencia de bundle/live y tests de contrato de endpoint; `playlist remove` envía un clip por petición porque los lotes grandes pueden devolver Suno 500.
+Los flujos generate, describe, persona, cover y extend reutilizan `/api/generate/v2-web/` de Suno Web. El body custom create fue recapturado el 30 de junio de 2026: las letras personalizadas se envían en `gpt_description_prompt`, mientras `prompt` queda vacío; con un challenge token resuelto también se envía `token_provider: 1`. Sunox rellena `metadata.user_tier` desde el `plan.id` de `/api/billing/info/` de la cuenta actual cuando está disponible, y cae al valor vacío compatible con Web si no puede leerlo. Con `--enhance-tags`, Sunox llama primero a `/api/prompts/upsample` y coloca los tags y el `request_id` devueltos en `metadata.last_tags_generation`; el campo `personalization_enabled` sigue la forma del submit Web capturado. Sin ese flag, no envía `metadata.last_tags_generation`. Instrumental create también usa custom mode: con `sunox create --instrumental <prompt>`, el prompt se integra en los style tags y el campo `prompt` enviado queda vacío, igual que en la petición Web recapturada en `15suno-labs-nostudio-20260630.har`. `task: "playlist_condition"` también fue capturado, pero pertenece a un flujo inspiration separado que pone letras en `prompt`, por lo que no debe reutilizar las reglas del custom create estándar. Remaster usa `/api/generate/upsample`, y speed adjust usa `/api/clips/adjust-speed/`. Por defecto, `sunox` no envía challenge token; si Suno devuelve required y hay material Clerk para refrescar, Sunox refresca el JWT una vez y repite el preflight antes de pedir `--token <solved>` o un `--captcha` explícito. Los bodies de cover generation y concat edit todavía necesitan una captura live nueva. Las mutaciones de playlists están implementadas con evidencia de bundle/live y tests de contrato de endpoint; `playlist remove` envía un clip por petición porque los lotes grandes pueden devolver Suno 500.
 
 ## Contribuir
 

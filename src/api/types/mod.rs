@@ -10,13 +10,14 @@ mod metadata;
 mod operations;
 mod persona;
 mod playlist;
+mod prompts;
 mod upload;
 
 pub use account::{BillingInfo, Model};
 pub use clip::Clip;
 pub use clip_mutation::{ClipReaction, ClipTrashRequest, SetClipReactionRequest};
 pub use feed::{FeedFilters, FeedResponse, FeedV3Request};
-pub use generation::{ControlSliders, GenerateRequest, GenerateResponse};
+pub use generation::{ControlSliders, GenerateRequest, GenerateResponse, LastTagsGeneration};
 pub use lyrics::{AlignedWord, LyricsResult, LyricsSubmitResponse};
 pub use metadata::{SetMetadataRequest, SetVisibilityRequest};
 pub use operations::ConcatRequest;
@@ -31,6 +32,7 @@ pub use playlist::{
     PlaylistTracksRequest, SetPlaylistCoverRequest, SetPlaylistMetadataRequest,
     SetPlaylistReactionRequest, SetPlaylistVisibilityRequest, TrashPlaylistRequest,
 };
+pub use prompts::{PromptUpsampleRequest, PromptUpsampleResponse};
 pub use upload::{
     AudioUploadInitResponse, AudioUploadStatus, CreateAudioUploadRequest, CreateAudioUploadSpec,
     CreateImageUploadRequest, FinishAudioUploadRequest, FinishImageUploadResponse,

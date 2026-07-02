@@ -20,8 +20,13 @@ impl SunoClient {
             }
         }
 
+        let body = self.generation_request_body(req).await?;
         self.with_auth_retry(|| async {
-            let resp = self.post("/api/generate/v2-web/").json(req).send().await?;
+            let resp = self
+                .post("/api/generate/v2-web/")
+                .json(&body)
+                .send()
+                .await?;
             let resp = self.check_response(resp).await?;
             let result: GenerateResponse = resp.json().await?;
             Ok(result.clips)
@@ -50,6 +55,39 @@ impl SunoClient {
         }
         Ok(all_clips)
     }
+
+    async fn generation_request_body(
+        &self,
+        req: &GenerateRequest,
+    ) -> Result<serde_json::Value, CliError> {
+        let mut body = serde_json::to_value(req)?;
+        if generation_user_tier_is_empty(&body)
+            && let Some(user_tier) = self.current_generation_user_tier().await
+            && let Some(metadata) = body
+                .get_mut("metadata")
+                .and_then(|value| value.as_object_mut())
+        {
+            metadata.insert("user_tier".into(), serde_json::Value::String(user_tier));
+        }
+        Ok(body)
+    }
+
+    async fn current_generation_user_tier(&self) -> Option<String> {
+        self.billing_info()
+            .await
+            .ok()
+            .and_then(|info| info.plan.id)
+            .map(|tier| tier.trim().to_string())
+            .filter(|tier| !tier.is_empty())
+    }
+}
+
+fn generation_user_tier_is_empty(body: &serde_json::Value) -> bool {
+    body.get("metadata")
+        .and_then(|metadata| metadata.get("user_tier"))
+        .and_then(|user_tier| user_tier.as_str())
+        .map(|user_tier| user_tier.trim().is_empty())
+        .unwrap_or(true)
 }
 
 fn generation_challenge_error(challenge: &super::challenge::GenerationChallenge) -> CliError {

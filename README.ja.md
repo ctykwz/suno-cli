@@ -193,7 +193,7 @@ sunox update
 sunox login
 ```
 
-`sunox login` はまず Chrome、Arc、Brave、Firefox、Edge から Clerk cookie を読み取ります。失敗した場合は Sunox 専用の Chrome/Edge 互換ブラウザ profile を開き、そこで Suno にログインすると Clerk session を取得します。その session を JWT に交換し、更新可能なローカル session として保存します。
+`sunox login` はまず Chrome、Arc、Brave、Firefox、Edge から Clerk cookie を読み取ります。成功した場合はブラウザ種別と、取得できる公開 profile 設定（受け入れ言語など）を保存しますが、ブラウザ名だけから user-agent を作ることはありません。失敗した場合は Sunox 専用の Chrome/Edge 互換ブラウザ profile を開き、そこで Suno にログインすると Clerk session を取得します。その session を JWT に交換し、更新可能なローカル session として保存します。対話型 login では user-agent と受け入れ言語も取得し、API request では選択された user-agent から Chromium client hints を派生し、browser fetch metadata header を送り、実値がない項目だけ fallback します。
 
 認証方式：
 
@@ -210,6 +210,7 @@ sunox login
 |---|---|---|
 | `--title` | 曲名 | 最大 100 文字 |
 | `--tags` | スタイル指定 | 例: `"pop, synths, upbeat"` |
+| `--enhance-tags` | 送信前に Suno Web の tag upsample でスタイルタグを強化 | 明示的に指定 |
 | `--exclude` | 避けたいスタイル | 例: `"metal, heavy, dark"` |
 | `--lyrics` / `--lyrics-file` | カスタム歌詞 | `[Verse]` などのセクションタグに対応 |
 | `--prompt` | description mode の prompt | 最大 500 文字 |
@@ -338,7 +339,7 @@ sunox install-skill --target cursor
 
 ## 実装メモ
 
-生成、description、persona、cover、extend は Suno Web の `/api/generate/v2-web/` を使います。2026-06-30 の HAR で custom create body を再捕捉しました。カスタム歌詞は `gpt_description_prompt` に入り、`prompt` は空のままです。challenge token を送る場合は `token_provider: 1` も送信します。instrumental create も custom mode を使います。`sunox create --instrumental <prompt>` では prompt を style tags に統合し、送信時の `prompt` は空のままにします。これは `15suno-labs-nostudio-20260630.har` で再捕捉した Web リクエスト形状と一致します。`task: "playlist_condition"` も捕捉済みですが、これは inspiration 生成の別変種で、歌詞は `prompt` に入ります。通常の custom create ルールを流用しないでください。remaster は捕捉済みの `/api/generate/upsample`、speed adjust は `/api/clips/adjust-speed/` を使います。認証済み生成はデフォルトで challenge token なしで送信します。Suno が required を返し、保存済み Clerk session を refresh できる場合、Sunox は JWT を一度更新して preflight を再実行し、それでも required の場合だけ `--token <solved>` または明示的な `--captcha` を案内します。cover generation と concat edit の body は、まだ新しい live mutation capture が必要です。playlist mutation は bundle/live evidence と endpoint contract test に基づいて実装済みです。`playlist remove` は大きなバッチで Suno 500 が返る場合があるため、clip ごとに 1 リクエストで送信します。
+生成、description、persona、cover、extend は Suno Web の `/api/generate/v2-web/` を使います。2026-06-30 の HAR で custom create body を再捕捉しました。カスタム歌詞は `gpt_description_prompt` に入り、`prompt` は空のままです。challenge token を送る場合は `token_provider: 1` も送信します。Sunox は現在のアカウントの `/api/billing/info/` `plan.id` から `metadata.user_tier` を埋め、取得できない場合は空値に fallback します。`--enhance-tags` を指定すると、Sunox は先に `/api/prompts/upsample` を呼び、返された tags と `request_id` を `metadata.last_tags_generation` に入れます。`personalization_enabled` は捕捉済みの Web submit 形状に合わせます。この flag がない場合、`metadata.last_tags_generation` は送信しません。instrumental create も custom mode を使います。`sunox create --instrumental <prompt>` では prompt を style tags に統合し、送信時の `prompt` は空のままにします。これは `15suno-labs-nostudio-20260630.har` で再捕捉した Web リクエスト形状と一致します。`task: "playlist_condition"` も捕捉済みですが、これは inspiration 生成の別変種で、歌詞は `prompt` に入ります。通常の custom create ルールを流用しないでください。remaster は捕捉済みの `/api/generate/upsample`、speed adjust は `/api/clips/adjust-speed/` を使います。認証済み生成はデフォルトで challenge token なしで送信します。Suno が required を返し、保存済み Clerk session を refresh できる場合、Sunox は JWT を一度更新して preflight を再実行し、それでも required の場合だけ `--token <solved>` または明示的な `--captcha` を案内します。cover generation と concat edit の body は、まだ新しい live mutation capture が必要です。playlist mutation は bundle/live evidence と endpoint contract test に基づいて実装済みです。`playlist remove` は大きなバッチで Suno 500 が返る場合があるため、clip ごとに 1 リクエストで送信します。
 
 ## コントリビューション
 

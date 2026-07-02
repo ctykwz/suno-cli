@@ -84,6 +84,16 @@ No live request-body evidence found in those HARs:
 - **Current web headers observed on non-Studio page-load API calls**:
   - `device-id: <uuid>` (from browser, persisted)
   - `browser-token: {"token":"<base64({"timestamp":<ms>})>"}` (dynamic, generated per-request)
+  - `user-agent: <browser runtime user agent>` when captured, otherwise a
+    Chromium fallback
+  - `accept-language: <browser languages>` when captured, otherwise `en`
+  - `sec-ch-ua`, `sec-ch-ua-mobile`, and `sec-ch-ua-platform` on Chromium-like
+    user agents
+  - `accept: */*`
+  - `sec-fetch-site: same-site`
+  - `sec-fetch-mode: cors`
+  - `sec-fetch-dest: empty`
+  - `priority: u=1, i`
   - `origin: https://suno.com`
   - `referer: https://suno.com/`
 - **CLI-only direct-call header**:
@@ -92,6 +102,26 @@ No live request-body evidence found in those HARs:
 - **Clerk session ID**: Found in JWT `sid` claim.
 - **Clerk versions observed**: `__clerk_api_version=2025-11-10`, `_clerk_js_version=5.117.0`.
 - **Captcha/challenge observed**: Clerk heartbeat posts `captcha_widget_type=invisible`, `captcha_action=heartbeat`; page load uses Cloudflare Turnstile assets from `challenges.cloudflare.com`. `13suno-labs-nostudio-20260630.har` captured `POST /api/c/check` returning both `required: false` and `required: true`; when a generation token was present, the submit body used `token_provider: 1`.
+- **Dynamic request fields observed across the captured Suno API calls**:
+  `browser-token` contains only a base64 JSON timestamp, generation bodies use
+  `transaction_uuid` and `metadata.create_session_token`, `metadata.user_tier`
+  matches `/api/billing/info/` `plan.id`, and tag upsample flows can carry the
+  upstream `metadata.last_tags_generation.request_id`. No separate body-level
+  fingerprint, timezone, locale, or browser runtime blob was found in the
+  captured generation submit path.
+- **Response-to-request carry-over scan**: all captured Suno API responses were
+  scanned for scalar values that appeared in later request headers, query
+  strings, or JSON bodies. The relevant non-resource carry-over is
+  `/api/billing/info/` `plan.id` into generation `metadata.user_tier`, which the
+  CLI now fills when available. The optional tag-enhancement flow carries
+  `/api/prompts/upsample` `request_id` and `upsampled` tags into
+  `metadata.last_tags_generation`, while the observed `personalization_enabled`
+  flag is part of the captured submit shape rather than the upsample response.
+  This metadata is sent only when the upsample request actually ran;
+  `--enhance-tags` runs this flow explicitly and the CLI must not fabricate it
+  otherwise. Other matches were normal resource
+  chaining such as clip IDs, feed cursors, user IDs, remaster model keys, and an
+  echoed/persisted `device-id`, not hidden validation nonces.
 
 ## Page-Load Endpoint Map (Non-Studio)
 
@@ -304,8 +334,11 @@ of being sent through inspiration mode.
 
 When the web tag upsample flow is used first, `metadata.last_tags_generation`
 is copied from `POST /api/prompts/upsample` and `override_fields` can be
-`["tags"]`. The CLI does not fabricate this metadata because it is tied to the
-upsample response `request_id`.
+`["tags"]`. The CLI runs this flow only for explicit `--enhance-tags` requests
+and does not fabricate this metadata because its tags and `request_id` are tied
+to the upsample response. Captured submits also set
+`personalization_enabled: true`; that flag was not observed in the upsample
+response itself.
 
 **Challenge handling**: The web calls `POST /api/c/check` with
 `{"ctype":"generation"}` before submit. Rust CLI commands that submit through
@@ -351,8 +384,9 @@ Response:
 }
 ```
 If this response is used, generation submit sends the returned tags and embeds
-`metadata.last_tags_generation` with `tags`, `request_id`, `original_tags`, and
-`personalization_enabled`.
+`metadata.last_tags_generation` with response-derived `tags` and `request_id`,
+the request's `original_tags`, and the captured submit field
+`personalization_enabled: true`.
 
 ### GET /api/feed/?ids={clip_id_1},{clip_id_2}
 Batch clip lookup used by `status`, `wait`, and post-submit polling. The CLI
@@ -972,7 +1006,7 @@ processing is not.
 2. **Lyrics generation is free and easy** — no captcha needed, just JWT auth
 3. **JWT refresh** — need Clerk cookie exchange or session keepalive
 4. **Browser-token header** — dynamically generated from current timestamp, base64-encoded
-5. **Browser environment** — browser-cookie extraction records a stable browser source id (`chrome`, `arc`, `brave`, `firefox`, or `edge`) and best-effort public profile settings such as `accept-language`; it does not fabricate a `user-agent` from that label. Interactive login captures stable runtime headers such as `user-agent` and `accept-language`. API calls reuse captured fields independently and fall back field-by-field when unavailable.
+5. **Browser environment** — browser-cookie extraction records a stable browser source id (`chrome`, `arc`, `brave`, `firefox`, or `edge`) and best-effort public profile settings such as `accept-language`; it does not fabricate a `user-agent` from that label. Interactive login captures stable runtime headers such as `user-agent` and `accept-language`. API calls reuse captured fields independently, derive Chromium client hints from the selected `user-agent`, send the stable browser fetch metadata headers observed in HARs, and fall back field-by-field when unavailable.
 6. **Cookie-based approach** — store Clerk session cookies, exchange for JWT via `auth.suno.com/v1/client/sessions/<session_id>/tokens`
 7. **`feed/v3` is cursor-based** — the current web request uses `cursor`, `limit`, and scenario-specific filters, not numeric pages
 8. **Two auth strategies**:
