@@ -4,6 +4,7 @@ use tokio::sync::oneshot;
 use tokio::time::{Duration, timeout};
 
 use super::SunoClient;
+use super::extend::ExtendClipOptions;
 use super::types::{
     ClipReaction, CreateAudioUploadRequest, CreateAudioUploadSpec, CreateImageUploadRequest,
     CreatePersonaRequest, EditPersonaRequest, FinishAudioUploadRequest, GenerateRequest,
@@ -921,6 +922,65 @@ async fn stems_with_challenge_token_posts_generate_without_preflight_contract() 
     assert_eq!(body["metadata"]["user_tier"], "tier-pro");
     assert_eq!(body["token"], "captcha-token");
     assert_eq!(body["token_provider"], 1);
+}
+
+#[tokio::test]
+async fn extend_fetches_source_clip_and_posts_string_title_contract() {
+    let billing = billing_info_response("tier-pro");
+    let server = MockServer::json_sequence(&[
+        r#"[{"id":"clip-a","title":"Source Song","status":"complete","model_name":"chirp-fenix","created_at":"2026-06-30T00:00:00Z","metadata":{"prompt":"[Verse]\nOriginal words"}}]"#,
+        r#"{"clips":[{"id":"clip-a","title":"Source Song","status":"complete","model_name":"chirp-fenix","created_at":"2026-06-30T00:00:00Z","metadata":{"tags":"source chamber folk","negative_tags":"vocals, narration","prompt":"[Verse]\nOriginal words","make_instrumental":true}}]}"#,
+        r#"{"required":false}"#,
+        billing.as_str(),
+        r#"{"clips":[{"id":"extend-1","title":"Source Song","status":"submitted","model_name":"chirp-fenix","created_at":"2026-06-30T00:00:00Z"}]}"#,
+    ])
+    .await;
+    let client = server.client();
+
+    let clips = client
+        .extend(ExtendClipOptions {
+            clip_id: "clip-a",
+            continue_at: 118.0,
+            tags: None,
+            negative_tags: None,
+            lyrics: None,
+            title: None,
+            instrumental: None,
+            challenge_token: None,
+        })
+        .await
+        .expect("extend");
+
+    assert_eq!(clips[0].id, "extend-1");
+    let requests = server.captured_all().await;
+    assert_eq!(requests.len(), 5);
+    assert_eq!(requests[0].method, "GET");
+    assert_eq!(requests[0].path, "/api/feed/?ids=clip-a");
+    assert_eq!(requests[1].method, "POST");
+    assert_eq!(requests[1].path, "/api/feed/v3");
+    let feed_body =
+        serde_json::from_str::<serde_json::Value>(&requests[1].body).expect("feed request json");
+    assert_eq!(feed_body["filters"]["searchText"], "Source Song");
+    assert_eq!(requests[2].method, "POST");
+    assert_eq!(requests[2].path, "/api/c/check");
+    assert_eq!(requests[3].method, "GET");
+    assert_eq!(requests[3].path, "/api/billing/info/");
+    assert_eq!(requests[4].method, "POST");
+    assert_eq!(requests[4].path, "/api/generate/v2-web/");
+    let body = serde_json::from_str::<serde_json::Value>(&requests[4].body).expect("request json");
+    assert_eq!(body["task"], "extend");
+    assert_eq!(body["title"], "Source Song");
+    assert_eq!(body["prompt"], "");
+    assert_eq!(body["continued_aligned_prompt"], "[Verse]\nOriginal words");
+    assert_eq!(body["tags"], "source chamber folk");
+    assert_eq!(body["negative_tags"], "vocals, narration");
+    assert_eq!(body["continue_clip_id"], "clip-a");
+    assert_eq!(body["continue_at"], 118.0);
+    assert_eq!(body["make_instrumental"], true);
+    assert_eq!(body["metadata"]["create_mode"], "custom");
+    assert_eq!(body["metadata"]["is_remix"], true);
+    assert_eq!(body["metadata"]["lyrics_updated"], true);
+    assert_eq!(body["metadata"]["user_tier"], "tier-pro");
 }
 
 #[tokio::test]

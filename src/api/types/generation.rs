@@ -135,6 +135,8 @@ pub struct GenerateMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_remix: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub lyrics_updated: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub last_tags_generation: Option<LastTagsGeneration>,
 }
 
@@ -151,6 +153,7 @@ impl GenerateMetadata {
             control_sliders: None,
             lyrics_model: None,
             is_remix: None,
+            lyrics_updated: None,
             last_tags_generation: None,
         }
     }

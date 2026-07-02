@@ -1,4 +1,5 @@
 use crate::api::SunoClient;
+use crate::api::extend::ExtendClipOptions;
 use crate::api::types::{GenerateRequest, LastTagsGeneration};
 use crate::app::AppContext;
 use crate::cli::{CreateArgs, DescribeArgs, ExtendArgs, GenerateArgs, ModelVersion};
@@ -219,17 +220,29 @@ fn model_label<'a>(model: Option<&'a ModelVersion>, config: &'a AppConfig) -> &'
 }
 
 pub async fn extend(args: ExtendArgs, ctx: &AppContext) -> Result<(), CliError> {
-    let mut req = GenerateRequest::new("chirp-fenix", "custom");
-    req.prompt = args.lyrics.unwrap_or_default();
-    req.tags = args.tags;
-    req.continue_clip_id = Some(args.clip_id);
-    req.continue_at = Some(args.at);
     let force_captcha = args.captcha && !args.no_captcha;
-    req.set_challenge_token(generation_token(args.token.clone(), force_captcha, ctx).await?);
-
+    let challenge_token = generation_token(args.token.clone(), force_captcha, ctx).await?;
+    let instrumental = if args.instrumental {
+        Some(true)
+    } else if args.no_instrumental {
+        Some(false)
+    } else {
+        None
+    };
     let _mutation_guard = ctx.acquire_mutation_lock()?;
     let client = ctx.client().await?;
-    let clips = client.generate(&req).await?;
+    let clips = client
+        .extend(ExtendClipOptions {
+            clip_id: &args.clip_id,
+            continue_at: args.at,
+            tags: args.tags.as_deref(),
+            negative_tags: args.exclude.as_deref(),
+            lyrics: args.lyrics.as_deref(),
+            title: args.title.as_deref(),
+            instrumental,
+            challenge_token,
+        })
+        .await?;
     output_clips(&clips, ctx);
     Ok(())
 }

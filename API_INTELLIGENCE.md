@@ -395,7 +395,52 @@ to be a JSON array of clip objects. An empty or partial response for requested
 IDs is treated as `NotFound`, not as successful completion.
 
 ### POST /api/generate/concat/v2/
-Concatenate/extend clips. `{"clip_id": "<id>"}`
+Concatenate clips into a full song. `{"clip_id": "<id>"}`
+
+### POST /api/generate/v2-web/ for clip extend
+Continue an existing clip from a timestamp. Current CLI fetches the source clip
+first with `GET /api/feed/?ids={clip_id}` because Suno rejects `title: null`
+with `422 params.title should be a valid string`; the submitted title defaults
+to `source.title` unless `--title` overrides it. `GET /api/feed/?ids` may omit
+source style metadata that the web create page gets from `POST /api/feed/v3`;
+Sunox therefore searches feed/v3 by `source.title` and merges only the exact
+source clip id when tags, negative tags, or make_instrumental are missing.
+`tags` defaults to `source.metadata.tags`, `negative_tags` defaults to
+`source.metadata.negative_tags` when available, and `make_instrumental` defaults
+to `source.metadata.make_instrumental` when available unless `--instrumental` or
+`--no-instrumental` overrides it. Live CLI verification on July 2, 2026
+confirmed `clip extend` succeeds with the captured web fields below.
+
+```json
+{
+  "token": null,
+  "task": "extend",
+  "generation_type": "TEXT",
+  "title": "<source title>",
+  "tags": "<extension or source style tags>",
+  "negative_tags": "<extension or source exclude tags>",
+  "mv": "chirp-fenix",
+  "prompt": "<extension lyrics or empty string>",
+  "make_instrumental": true,
+  "metadata": {
+    "web_client_pathname": "/create",
+    "is_max_mode": false,
+    "is_mumble": false,
+    "create_mode": "custom",
+    "user_tier": "<account plan uuid or empty string>",
+    "create_session_token": "<uuid>",
+    "disable_volume_normalization": false,
+    "lyrics_updated": true,
+    "is_remix": true
+  },
+  "override_fields": [],
+  "continue_clip_id": "<source clip id>",
+  "continued_aligned_prompt": "<source continuation context or empty string>",
+  "continue_at": 118,
+  "transaction_uuid": "<uuid>",
+  "token_provider": null
+}
+```
 
 ### POST /api/generate/upsample
 Current web remaster route, captured from

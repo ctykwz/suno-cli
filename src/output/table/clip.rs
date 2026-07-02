@@ -61,7 +61,11 @@ pub fn clip_detail(clip: &Clip) {
     table.add_row(vec!["Has Stems", &clip.metadata.has_stem.to_string()]);
     table.add_row(vec![
         "Instrumental",
-        &clip.metadata.make_instrumental.to_string(),
+        &clip
+            .metadata
+            .make_instrumental
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "-".to_string()),
     ]);
 
     if let Some(ref url) = clip.audio_url {

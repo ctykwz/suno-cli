@@ -206,9 +206,25 @@ pub struct ExtendArgs {
     #[arg(long)]
     pub lyrics: Option<String>,
 
+    /// Title for the continued clip. Defaults to the source clip title.
+    #[arg(long)]
+    pub title: Option<String>,
+
     /// Style tags
     #[arg(long)]
     pub tags: Option<String>,
+
+    /// Exclude styles. Defaults to the source clip's exclude tags when available.
+    #[arg(long)]
+    pub exclude: Option<String>,
+
+    /// Force instrumental continuation. Defaults to the source clip setting.
+    #[arg(long, conflicts_with = "no_instrumental")]
+    pub instrumental: bool,
+
+    /// Force vocal continuation instead of inheriting the source clip setting.
+    #[arg(long)]
+    pub no_instrumental: bool,
 
     /// Challenge token (overrides the built-in solver)
     #[arg(long)]

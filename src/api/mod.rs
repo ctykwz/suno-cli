@@ -5,6 +5,7 @@ pub mod challenge;
 pub mod concat;
 pub mod cover;
 pub mod delete;
+pub mod extend;
 pub mod feed;
 pub mod generate;
 pub mod lyrics;

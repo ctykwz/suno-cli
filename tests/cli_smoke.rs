@@ -332,6 +332,19 @@ fn generate_backed_clip_commands_expose_challenge_controls() {
 }
 
 #[test]
+fn extend_help_exposes_source_defaults_and_instrumental_overrides() {
+    let mut cmd = Command::cargo_bin("sunox").expect("binary");
+
+    cmd.args(["clip", "extend", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--title"))
+        .stdout(predicate::str::contains("--exclude"))
+        .stdout(predicate::str::contains("--instrumental"))
+        .stdout(predicate::str::contains("--no-instrumental"));
+}
+
+#[test]
 fn install_skill_prints_current_generation_guidance() {
     let mut cmd = Command::cargo_bin("sunox").expect("binary");
 
@@ -804,5 +817,24 @@ fn agent_info_separates_challenge_capable_commands_from_async_edits() {
     ] {
         assert!(async_edits.contains(&command));
     }
+    let extend_notes = command_notes["clip extend"]
+        .as_object()
+        .expect("extend notes");
+    assert_eq!(
+        extend_notes["route"],
+        "GET /api/feed/?ids=<clip_id>, optional POST /api/feed/v3 metadata fallback, then POST /api/generate/v2-web/"
+    );
+    assert!(
+        extend_notes["defaults"]
+            .as_str()
+            .expect("extend defaults")
+            .contains("source.metadata.make_instrumental")
+    );
+    assert!(
+        extend_notes["defaults"]
+            .as_str()
+            .expect("extend defaults")
+            .contains("source.metadata.negative_tags")
+    );
     assert!(command_notes.get("generate_backed_clip_edits").is_none());
 }
